@@ -71,12 +71,10 @@ export default function AuthModal({ isOpen, onClose }) {
   const handleApplyPastedConfig = (e) => {
     e.preventDefault();
     try {
-      // Parse JSON or JS object format
       let parsed = null;
       try {
         parsed = JSON.parse(pastedConfig);
       } catch (err) {
-        // Attempt to extract key: "value" pairs
         const clean = pastedConfig.replace(/([a-zA-Z0-9_]+)\s*:/g, '"$1":').replace(/'/g, '"');
         parsed = JSON.parse(clean);
       }
@@ -99,28 +97,28 @@ export default function AuthModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#40382F]/50 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#40382F]/70 font-['Inter',sans-serif]">
       <div 
-        className="relative w-full max-w-md bg-[#FEFAE0] dark:bg-[#454D37] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[16px] p-6 sm:p-8 shadow-2xl transition-colors"
+        className="relative w-full max-w-md bg-[#FEFAE0] dark:bg-[#25291F] border border-[rgba(64,56,47,0.25)] dark:border-[#555C48] rounded-none p-6 sm:p-8 shadow-2xl transition-colors"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-[#75695A] dark:text-[#D8D3BC] hover:text-[#40382F] dark:hover:text-[#FEFAE0] rounded-[8px] hover:bg-[#FAEDCD] dark:hover:bg-[#343B2B] transition-all"
+          className="absolute top-4 right-4 p-1.5 text-[#75695A] dark:text-[#CCD5AE] hover:text-[#40382F] dark:hover:text-[#FEFAE0] rounded-none hover:bg-[#FAEDCD] dark:hover:bg-[#343B2B] border border-transparent hover:border-[rgba(64,56,47,0.2)] dark:hover:border-[#555C48] transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-[12px] bg-[#D4A373] text-[#FEFAE0] mb-3 shadow-sm">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-none bg-[#D4A373] dark:bg-[#A66F3F] text-[#FEFAE0] mb-3 border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
             <Sparkles className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-extrabold text-[#40382F] dark:text-[#FEFAE0] tracking-tight">
+          <h2 className="text-2xl font-black text-[#40382F] dark:text-[#FEFAE0] tracking-tight uppercase">
             {isRegisterMode ? 'Join StudyStream' : 'Welcome Back'}
           </h2>
-          <p className="text-xs sm:text-sm text-[#75695A] dark:text-[#D8D3BC] mt-1 font-normal">
+          <p className="text-xs sm:text-sm text-[#75695A] dark:text-[#CCD5AE] mt-1 font-normal">
             {isRegisterMode
               ? 'Start studying alongside thousands of focused scholars'
               : 'Sign in to access your streaks, rooms, and live statistics'}
@@ -128,14 +126,14 @@ export default function AuthModal({ isOpen, onClose }) {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-200 text-xs">
+          <div className="mb-4 p-3 rounded-none bg-rose-100 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs">
             {error}
           </div>
         )}
 
         {infoMessage && (
-          <div className="mb-4 p-3 rounded-[10px] bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-xs flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <div className="mb-4 p-3 rounded-none bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
             <span>{infoMessage}</span>
           </div>
         )}
@@ -145,7 +143,7 @@ export default function AuthModal({ isOpen, onClose }) {
           type="button"
           onClick={handleGoogleAuth}
           disabled={submitting || googleSubmitting}
-          className="w-full py-2.5 px-4 mb-4 rounded-[10px] bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.18)] dark:border-[#555C48] text-[#40382F] dark:text-[#FEFAE0] hover:bg-[#E9EDC9] dark:hover:bg-[#454D37] text-xs font-bold flex items-center justify-center space-x-2.5 shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+          className="w-full py-2.5 px-4 mb-4 rounded-none bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.25)] dark:border-[#555C48] text-[#40382F] dark:text-[#FEFAE0] hover:bg-[#E9EDC9] dark:hover:bg-[#454D37] text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-2.5 transition-colors disabled:opacity-50"
         >
           {/* Official Google G Logo SVG */}
           <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
@@ -177,13 +175,13 @@ export default function AuthModal({ isOpen, onClose }) {
 
         {/* Inline Firebase Configuration Helper when keys needed */}
         {showConfigHelper && (
-          <div className="mb-4 p-4 rounded-[12px] bg-[#FAEDCD] dark:bg-[#343B2B] border border-[#D4A373]/50 text-xs">
+          <div className="mb-4 p-4 rounded-none bg-[#FAEDCD] dark:bg-[#343B2B] border border-[#D4A373] text-xs">
             <div className="flex items-start space-x-2.5 mb-2">
               <Key className="w-4 h-4 text-[#D4A373] mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-bold text-[#40382F] dark:text-[#FEFAE0]">Firebase Setup Ready</p>
-                <p className="text-[11px] text-[#75695A] dark:text-[#D8D3BC] mt-0.5">
-                  Paste your Firebase config object below or place it in <code className="font-mono bg-[#E9EDC9] dark:bg-[#454D37] px-1 py-0.5 rounded">client/.env</code>:
+                <p className="font-bold text-[#40382F] dark:text-[#FEFAE0] uppercase tracking-wider">Firebase Setup Ready</p>
+                <p className="text-[11px] text-[#75695A] dark:text-[#CCD5AE] mt-0.5">
+                  Paste your Firebase config object below or place it in <code className="font-mono bg-[#E9EDC9] dark:bg-[#454D37] px-1 py-0.5">client/.env</code>:
                 </p>
               </div>
             </div>
@@ -194,19 +192,19 @@ export default function AuthModal({ isOpen, onClose }) {
                 value={pastedConfig}
                 onChange={(e) => setPastedConfig(e.target.value)}
                 placeholder={'{\n  "apiKey": "AIzaSy...",\n  "authDomain": "your-app.firebaseapp.com",\n  "projectId": "your-project"\n}'}
-                className="w-full font-mono text-[11px] bg-[#FEFAE0] dark:bg-[#454D37] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[8px] p-2 text-[#40382F] dark:text-[#FEFAE0] focus:outline-none focus:border-[#D4A373]"
+                className="w-full font-mono text-[11px] bg-[#FEFAE0] dark:bg-[#25291F] border border-[rgba(64,56,47,0.25)] dark:border-[#555C48] rounded-none p-2 text-[#40382F] dark:text-[#FEFAE0] focus:outline-none focus:border-[#D4A373]"
               />
               <div className="flex items-center justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowConfigHelper(false)}
-                  className="px-2.5 py-1 text-[11px] text-[#75695A] dark:text-[#D8D3BC] hover:underline"
+                  className="px-2.5 py-1 text-[11px] text-[#75695A] dark:text-[#CCD5AE] hover:underline uppercase"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1 rounded-[6px] bg-[#D4A373] text-[#40382F] font-bold text-[11px] hover:bg-[#C59361]"
+                  className="px-3 py-1 rounded-none bg-[#D4A373] dark:bg-[#A66F3F] text-[#40382F] dark:text-[#FEFAE0] font-bold uppercase tracking-wider text-[11px] hover:bg-[#C59361] border border-[rgba(64,56,47,0.2)]"
                 >
                   Save & Connect
                 </button>
@@ -216,76 +214,76 @@ export default function AuthModal({ isOpen, onClose }) {
         )}
 
         <div className="relative flex py-2 items-center mb-4">
-          <div className="flex-grow border-t border-[rgba(64,56,47,0.14)] dark:border-[#555C48]"></div>
-          <span className="flex-shrink mx-3 text-[#75695A] dark:text-[#D8D3BC] text-[11px] uppercase tracking-wider font-semibold">
+          <div className="flex-grow border-t border-[rgba(64,56,47,0.2)] dark:border-[#555C48]"></div>
+          <span className="flex-shrink mx-3 text-[#75695A] dark:text-[#CCD5AE] text-[10px] uppercase tracking-wider font-bold">
             or continue with credentials
           </span>
-          <div className="flex-grow border-t border-[rgba(64,56,47,0.14)] dark:border-[#555C48]"></div>
+          <div className="flex-grow border-t border-[rgba(64,56,47,0.2)] dark:border-[#555C48]"></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegisterMode && (
             <div>
-              <label className="block text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Display Name</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Display Name</label>
               <div className="relative">
-                <User className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#D8D3BC]" />
+                <User className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#CCD5AE]" />
                 <input
                   type="text"
                   required
                   placeholder="e.g. Alex"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#D8D3BC]/60 focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
+                  className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#CCD5AE]/60 focus:outline-none focus:border-[#D4A373]"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#40382F] dark:text-[#FEFAE0] mb-1.5">
               {isRegisterMode ? 'Username' : 'Username or Email'}
             </label>
             <div className="relative">
-              <User className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#D8D3BC]" />
+              <User className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#CCD5AE]" />
               <input
                 type="text"
                 required
                 placeholder="your_handle"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#D8D3BC]/60 focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
+                className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#CCD5AE]/60 focus:outline-none focus:border-[#D4A373]"
               />
             </div>
           </div>
 
           {isRegisterMode && (
             <div>
-              <label className="block text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Email Address</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#D8D3BC]" />
+                <Mail className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#CCD5AE]" />
                 <input
                   type="email"
                   required
                   placeholder="you@domain.edu"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#D8D3BC]/60 focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
+                  className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#CCD5AE]/60 focus:outline-none focus:border-[#D4A373]"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Password</label>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#40382F] dark:text-[#FEFAE0] mb-1.5">Password</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#D8D3BC]" />
+              <Lock className="absolute left-3 top-3 w-4 h-4 text-[#75695A] dark:text-[#CCD5AE]" />
               <input
                 type="password"
                 required
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.14)] dark:border-[#555C48] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#D8D3BC]/60 focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
+                className="w-full bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none pl-10 pr-4 py-2.5 text-xs text-[#40382F] dark:text-[#FEFAE0] placeholder-[#9E9080] dark:placeholder-[#CCD5AE]/60 focus:outline-none focus:border-[#D4A373]"
               />
             </div>
           </div>
@@ -293,20 +291,20 @@ export default function AuthModal({ isOpen, onClose }) {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full mt-2 py-2.5 px-4 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-xs shadow-sm transition-all disabled:opacity-50"
+            className="w-full mt-2 py-2.5 px-4 rounded-none bg-[#D4A373] hover:bg-[#C59361] dark:bg-[#A66F3F] dark:hover:bg-[#D4A373] text-[#40382F] dark:text-[#FEFAE0] font-bold text-xs uppercase tracking-wider border border-[rgba(64,56,47,0.25)] dark:border-[#555C48] transition-colors disabled:opacity-50"
           >
             {submitting ? 'Authenticating...' : isRegisterMode ? 'Create Account' : 'Sign In'}
           </button>
         </form>
 
-        <div className="mt-5 text-center text-xs text-[#75695A] dark:text-[#D8D3BC]">
+        <div className="mt-5 text-center text-xs text-[#75695A] dark:text-[#CCD5AE]">
           {isRegisterMode ? (
             <>
               Already have an account?{' '}
               <button
                 type="button"
                 onClick={() => { setIsRegisterMode(false); setError(''); }}
-                className="text-[#D4A373] hover:text-[#B88252] font-bold underline ml-1"
+                className="text-[#D4A373] hover:text-[#B88252] font-bold underline ml-1 uppercase"
               >
                 Sign In
               </button>
@@ -317,7 +315,7 @@ export default function AuthModal({ isOpen, onClose }) {
               <button
                 type="button"
                 onClick={() => { setIsRegisterMode(true); setError(''); }}
-                className="text-[#D4A373] hover:text-[#B88252] font-bold underline ml-1"
+                className="text-[#D4A373] hover:text-[#B88252] font-bold underline ml-1 uppercase"
               >
                 Create Account
               </button>

@@ -18,17 +18,17 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
           className="flex items-center space-x-3 cursor-pointer group" 
           onClick={() => setCurrentView('lobby')}
         >
-          <div className="relative flex items-center justify-center w-10 h-10 rounded-[10px] bg-[#D4A373] shadow-sm shadow-[#D4A373]/20 group-hover:scale-105 transition-transform">
+          <div className="relative flex items-center justify-center w-10 h-10 rounded-none bg-[#D4A373] border border-[#40382F]/20 shadow-none transition-transform">
             <Sparkles className="w-5 h-5 text-[#FEFAE0]" />
             <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#CCD5AE] opacity-80"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#CCD5AE] border border-[#FEFAE0]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full bg-[#CCD5AE] opacity-80"></span>
+              <span className="relative inline-flex h-2.5 w-2.5 bg-[#CCD5AE] border border-[#FEFAE0]"></span>
             </span>
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
               <span className="font-bold text-lg text-[#40382F] tracking-tight">StudyStream</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-[6px] bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.12)] uppercase tracking-wider">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)] uppercase tracking-wider">
                 Live
               </span>
             </div>
@@ -37,12 +37,12 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
         </div>
 
         {/* Center Navigation Views */}
-        <nav className="hidden md:flex items-center space-x-1 bg-[#FAEDCD] p-1 rounded-[10px] border border-[rgba(64,56,47,0.14)] shadow-sm">
+        <nav className="hidden md:flex items-center space-x-1 bg-[#FAEDCD] p-1 rounded-none border border-[rgba(64,56,47,0.2)]">
           <button
             onClick={() => setCurrentView('lobby')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-none text-xs font-semibold transition-all ${
               currentView === 'lobby'
-                ? 'bg-[#CCD5AE] text-[#40382F] shadow-sm border border-[rgba(64,56,47,0.1)]'
+                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
                 : 'text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9]/60'
             }`}
           >
@@ -52,9 +52,9 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
 
           <button
             onClick={() => setCurrentView('blogs')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-none text-xs font-semibold transition-all ${
               currentView === 'blogs'
-                ? 'bg-[#CCD5AE] text-[#40382F] shadow-sm border border-[rgba(64,56,47,0.1)]'
+                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
                 : 'text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9]/60'
             }`}
           >
@@ -64,9 +64,9 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
 
           <button
             onClick={() => setCurrentView('leaderboard')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-none text-xs font-semibold transition-all ${
               currentView === 'leaderboard'
-                ? 'bg-[#CCD5AE] text-[#40382F] shadow-sm border border-[rgba(64,56,47,0.1)]'
+                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
                 : 'text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9]/60'
             }`}
           >
@@ -76,9 +76,9 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
 
           <button
             onClick={() => setCurrentView('analytics')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-none text-xs font-semibold transition-all ${
               currentView === 'analytics'
-                ? 'bg-[#CCD5AE] text-[#40382F] shadow-sm border border-[rgba(64,56,47,0.1)]'
+                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
                 : 'text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9]/60'
             }`}
           >
@@ -95,12 +95,12 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
             onClick={toggleTheme}
             aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
             title={isDark ? "Switch to Warm Ivory Light Mode" : "Switch to Coordinated Dark Mode"}
-            className="p-2 rounded-[10px] bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.14)] shadow-sm hover:scale-105 active:scale-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#D4A373]"
+            className="p-2 rounded-none bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9] transition-all focus:outline-none"
           >
             {isDark ? (
-              <Moon className="w-4 h-4 text-[#D4A373] transition-transform duration-300 transform rotate-12" />
+              <Moon className="w-4 h-4 text-[#D4A373]" />
             ) : (
-              <Sun className="w-4 h-4 text-[#D4A373] transition-transform duration-300 transform rotate-0" />
+              <Sun className="w-4 h-4 text-[#D4A373]" />
             )}
           </button>
 
@@ -109,7 +109,7 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
               {/* Streak badge */}
               <div 
                 onClick={() => setCurrentView('analytics')}
-                className="cursor-pointer flex items-center space-x-1.5 px-3 py-1.5 rounded-[10px] bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] text-[#40382F] text-xs font-semibold hover:bg-[#E9EDC9] transition-all shadow-sm"
+                className="cursor-pointer flex items-center space-x-1.5 px-3 py-1.5 rounded-none bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-xs font-semibold hover:bg-[#E9EDC9] transition-all"
                 title={`${user.current_streak} Day Focus Streak!`}
               >
                 <Flame className="w-4 h-4 text-[#D4A373] fill-[#D4A373]" />
@@ -119,24 +119,24 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
               {/* Total Hours badge */}
               <div 
                 onClick={() => setCurrentView('analytics')}
-                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-[10px] bg-[#E9EDC9] border border-[rgba(64,56,47,0.14)] text-[#40382F] text-xs font-semibold hover:bg-[#CCD5AE] transition-all shadow-sm"
+                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-xs font-semibold hover:bg-[#CCD5AE] transition-all"
               >
                 <Clock className="w-3.5 h-3.5 text-[#D4A373]" />
                 <span>{totalLiveHours}h live</span>
               </div>
 
               {/* User Avatar & Logout */}
-              <div className="flex items-center space-x-2 pl-2 border-l border-[rgba(64,56,47,0.14)]">
+              <div className="flex items-center space-x-2 pl-2 border-l border-[rgba(64,56,47,0.2)]">
                 <div 
                   onClick={() => setCurrentView('analytics')}
-                  className="w-8 h-8 rounded-[10px] bg-[#D4A373] text-[#FEFAE0] font-bold text-xs flex items-center justify-center cursor-pointer shadow-sm hover:scale-105 transition-all"
+                  className="w-8 h-8 rounded-none bg-[#D4A373] text-[#FEFAE0] font-bold text-xs flex items-center justify-center cursor-pointer border border-[#40382F]/20"
                   title={user.display_name}
                 >
                   {user.display_name.charAt(0).toUpperCase()}
                 </div>
                 <button
                   onClick={logout}
-                  className="p-1.5 text-[#75695A] hover:text-[#D4A373] hover:bg-[#FAEDCD] rounded-[8px] transition-all"
+                  className="p-1.5 text-[#75695A] hover:text-[#D4A373] hover:bg-[#FAEDCD] rounded-none transition-all"
                   title="Log out"
                 >
                   <LogOut className="w-4 h-4" />
@@ -147,7 +147,7 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
             <div className="flex items-center space-x-2">
               <button
                 onClick={onOpenAuth}
-                className="flex items-center space-x-2 px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className="flex items-center space-x-2 px-4 py-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20 transition-all"
               >
                 <LogIn className="w-4 h-4" />
                 <span>Sign In / Register</span>

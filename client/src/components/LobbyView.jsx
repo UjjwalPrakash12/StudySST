@@ -50,14 +50,10 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
       {/* Hero Section */}
-      <div className="relative rounded-[16px] overflow-hidden p-8 sm:p-12 mb-10 border border-[rgba(64,56,47,0.14)] bg-[#FAEDCD] shadow-sm">
-        {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-72 h-72 rounded-full bg-[#CCD5AE]/40 blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-1/3 -mb-16 w-72 h-72 rounded-full bg-[#E9EDC9]/50 blur-3xl pointer-events-none"></div>
-
+      <div className="relative rounded-none p-8 sm:p-12 mb-10 border border-[rgba(64,56,47,0.2)] bg-[#FAEDCD]">
         <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-[10px] bg-[#E9EDC9] border border-[rgba(64,56,47,0.12)] text-[#40382F] text-xs font-semibold mb-4 shadow-sm">
-            <span className="flex h-2 w-2 rounded-full bg-[#D4A373] animate-pulse"></span>
+          <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-xs font-semibold mb-4">
+            <span className="flex h-2 w-2 bg-[#D4A373] animate-pulse"></span>
             <span>24/7 Global Unlimited Live Virtual Study Halls</span>
           </div>
 
@@ -78,7 +74,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               onClick={() => {
                 if (filteredRooms.length > 0) onJoinRoom(filteredRooms[0]);
               }}
-              className="px-6 py-3 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-sm shadow-sm flex items-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="px-6 py-3 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-sm border border-[#40382F]/20 flex items-center space-x-2 transition-all"
             >
               <Play className="w-4 h-4 fill-[#40382F]" />
               <span>Hop into Quick Focus Room</span>
@@ -86,7 +82,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
 
             <button
               onClick={onOpenCreateRoom}
-              className="px-5 py-3 rounded-[10px] bg-[#CCD5AE] hover:bg-[#BCC69B] text-[#40382F] font-semibold text-sm border border-[rgba(64,56,47,0.12)] flex items-center space-x-2 transition-all hover:scale-[1.02]"
+              className="px-5 py-3 rounded-none bg-[#CCD5AE] hover:bg-[#BCC69B] text-[#40382F] font-semibold text-sm border border-[rgba(64,56,47,0.2)] flex items-center space-x-2 transition-all"
             >
               <Plus className="w-4 h-4 text-[#40382F]" />
               <span>Create Custom Study Hall</span>
@@ -94,16 +90,16 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
           </div>
 
           {/* Quick Metrics Bar */}
-          <div className="mt-8 pt-6 border-t border-[rgba(64,56,47,0.12)] grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#D4A373] animate-ping"></div>
+          <div className="mt-8 pt-6 border-t border-[rgba(64,56,47,0.2)] grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-none border border-[rgba(64,56,47,0.2)]">
+              <div className="w-2.5 h-2.5 bg-[#D4A373] animate-ping"></div>
               <div>
                 <p className="text-[#75695A] text-[11px]">Live Active Peers</p>
                 <p className="font-bold text-[#40382F] text-sm">{totalOnline} Studying Now</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-none border border-[rgba(64,56,47,0.2)]">
               <Timer className="w-4 h-4 text-[#D4A373]" />
               <div>
                 <p className="text-[#75695A] text-[11px]">Live Hours Tracking</p>
@@ -111,7 +107,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-none border border-[rgba(64,56,47,0.2)]">
               <Flame className="w-4 h-4 text-[#D4A373]" />
               <div>
                 <p className="text-[#75695A] text-[11px]">Daily Streaks</p>
@@ -119,7 +115,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-none border border-[rgba(64,56,47,0.2)]">
               <Shield className="w-4 h-4 text-[#75695A]" />
               <div>
                 <p className="text-[#75695A] text-[11px]">WebRTC Mesh</p>
@@ -141,10 +137,10 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-[10px] text-xs font-semibold whitespace-nowrap transition-all border ${
+                className={`px-4 py-2 rounded-none text-xs font-semibold whitespace-nowrap transition-all border ${
                   isSelected
-                    ? 'bg-[#D4A373] text-[#40382F] border-[#D4A373] shadow-sm font-bold'
-                    : 'bg-[#FAEDCD] text-[#75695A] hover:bg-[#E9EDC9] hover:text-[#40382F] border-[rgba(64,56,47,0.12)]'
+                    ? 'bg-[#D4A373] text-[#40382F] border-[#D4A373] font-bold'
+                    : 'bg-[#FAEDCD] text-[#75695A] hover:bg-[#E9EDC9] hover:text-[#40382F] border-[rgba(64,56,47,0.2)]'
                 }`}
               >
                 {cat}
@@ -161,7 +157,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
             placeholder="Search rooms or subjects..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm transition-all"
+            className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none pl-10 pr-4 py-2.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373] transition-all"
           />
         </div>
       </div>
@@ -169,15 +165,15 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
       {/* Room Grid */}
       {loading ? (
         <div className="py-20 text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#D4A373] border-t-transparent"></div>
+          <div className="inline-block animate-spin rounded-none h-8 w-8 border-4 border-[#D4A373] border-t-transparent"></div>
           <p className="mt-3 text-xs text-[#75695A] font-medium">Connecting to StudyStream rooms...</p>
         </div>
       ) : filteredRooms.length === 0 ? (
-        <div className="p-12 text-center rounded-[16px] bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)]">
+        <div className="p-12 text-center rounded-none bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)]">
           <p className="text-[#75695A] text-sm">No study halls match your filter.</p>
           <button
             onClick={onOpenCreateRoom}
-            className="mt-4 px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm"
+            className="mt-4 px-4 py-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20"
           >
             Create this Study Hall
           </button>
@@ -188,16 +184,16 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
             return (
               <div
                 key={room.id}
-                className="group relative bg-[#FEFAE0] hover:bg-[#FAEDCD]/70 border border-[rgba(64,56,47,0.14)] hover:border-[#D4A373]/60 rounded-[16px] p-6 transition-all duration-200 flex flex-col justify-between shadow-sm hover:shadow-md"
+                className="group relative bg-[#FEFAE0] hover:bg-[#FAEDCD]/70 border border-[rgba(64,56,47,0.2)] hover:border-[#D4A373] rounded-none p-6 transition-all duration-150 flex flex-col justify-between"
               >
                 <div>
                   {/* Top Badge Strip */}
                   <div className="flex items-center justify-between mb-3.5">
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-[8px] bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.1)]">
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]">
                       {room.category}
                     </span>
-                    <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-[8px] bg-[#E9EDC9] border border-[rgba(64,56,47,0.1)] text-[#40382F] text-[11px] font-semibold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373] animate-pulse"></span>
+                    <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-[11px] font-semibold">
+                      <span className="w-1.5 h-1.5 bg-[#D4A373] animate-pulse"></span>
                       <span>{room.onlineCount || 0} online</span>
                     </div>
                   </div>
@@ -215,18 +211,18 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
                   {/* Live Stream Details */}
                   <div className="mt-4 flex items-center space-x-3 text-[11px] text-[#40382F]">
                     <div className="flex items-center space-x-1.5 text-[#D4A373] font-semibold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373]"></span>
+                      <span className="w-1.5 h-1.5 bg-[#D4A373]"></span>
                       <span>Unlimited Live Streaming</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Action CTA */}
-                <div className="mt-6 pt-4 border-t border-[rgba(64,56,47,0.1)] flex items-center justify-between">
+                <div className="mt-6 pt-4 border-t border-[rgba(64,56,47,0.2)] flex items-center justify-between">
                   <span className="text-[11px] text-[#75695A] font-medium">WebRTC Video & Chat</span>
                   <button
                     onClick={() => onJoinRoom(room)}
-                    className="px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm flex items-center space-x-1.5 transition-all group-hover:scale-105 active:scale-95"
+                    className="px-4 py-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20 flex items-center space-x-1.5 transition-all"
                   >
                     <span>Join Room</span>
                     <Play className="w-3 h-3 fill-[#40382F]" />

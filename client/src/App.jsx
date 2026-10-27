@@ -33,7 +33,7 @@ function AppContent() {
   };
 
   return (
-    <div className="app-main-wrapper min-h-screen bg-[#FEFAE0] dark:bg-[#25291F] text-[#40382F] dark:text-[#FEFAE0] flex flex-col font-['Plus_Jakarta_Sans',sans-serif] transition-colors duration-200">
+    <div className="app-main-wrapper min-h-screen bg-[#FEFAE0] dark:bg-[#25291F] text-[#40382F] dark:text-[#FEFAE0] flex flex-col font-['Inter',sans-serif] transition-colors duration-200">
       {/* Navbar (displayed everywhere except during focused immersion in FocusRoomView) */}
       {currentView !== 'room' && (
         <Navbar

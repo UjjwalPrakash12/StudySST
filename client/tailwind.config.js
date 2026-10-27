@@ -7,6 +7,10 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
       colors: {
         sage: '#CCD5AE',
         'soft-green': '#E9EDC9',
@@ -18,12 +22,12 @@ export default {
         'text-primary': '#40382F',
         'text-secondary': '#75695A',
         'text-muted': '#9E9080',
-        border: 'rgba(64, 56, 47, 0.14)',
+        border: 'rgba(64, 56, 47, 0.18)',
         surface: '#FEFAE0',
       },
       borderRadius: {
-        card: '16px',
-        button: '10px',
+        card: '0px',
+        button: '0px',
       },
       boxShadow: {
         warm: '0 4px 20px -2px rgba(64, 56, 47, 0.06)',
