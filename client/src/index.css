@@ -20,7 +20,7 @@
 
 ::-webkit-scrollbar-thumb {
   background: rgba(99, 102, 241, 0.3);
-  border-radius: 9999px;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

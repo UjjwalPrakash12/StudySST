@@ -6,6 +6,17 @@ export default {
   ],
   darkMode: 'class',
   theme: {
+    borderRadius: {
+      none: '0px',
+      sm: '2px',
+      DEFAULT: '2px',
+      md: '3px',
+      lg: '4px',
+      xl: '4px',
+      '2xl': '4px',
+      '3xl': '6px',
+      full: '9999px',
+    },
     extend: {
       colors: {
         stream: {

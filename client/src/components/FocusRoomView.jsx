@@ -434,7 +434,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         <div className="flex items-center space-x-3">
           <button
             onClick={onLeaveRoom}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+            className="p-1.5 rounded-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
             title="Leave room"
           >
             <LogOut className="w-4 h-4 rotate-180" />
@@ -443,7 +443,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">{room.name}</h2>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
                 {room.category}
               </span>
             </div>
@@ -465,7 +465,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         </div>
 
         {/* Center: Synchronized Pomodoro Widget */}
-        <div className="flex items-center space-x-3 bg-[#1c202e] border border-white/10 px-3.5 py-1.5 rounded-2xl shadow-inner">
+        <div className="flex items-center space-x-3 bg-[#1c202e] border border-white/10 px-3.5 py-1.5 rounded shadow-inner">
           {/* Circular mini progress indicator */}
           <div className="relative flex items-center justify-center w-7 h-7">
             <svg className="w-7 h-7 -rotate-90">
@@ -490,7 +490,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               <span className="font-mono text-sm sm:text-base font-bold text-white tracking-wider">
                 {formatTime(remainingSeconds)}
               </span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider ${
                 timerMode === 'work' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
               }`}>
                 {timerMode === 'work' ? 'FOCUS' : 'BREAK'}
@@ -503,7 +503,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             {timerRunning ? (
               <button
                 onClick={() => handleTimerAction('pause')}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-white/5 transition-all"
+                className="p-1.5 rounded-sm text-slate-300 hover:text-amber-400 hover:bg-white/5 transition-all"
                 title="Pause Synced Timer"
               >
                 <Pause className="w-3.5 h-3.5" />
@@ -511,7 +511,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             ) : (
               <button
                 onClick={() => handleTimerAction('start')}
-                className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-300 hover:bg-white/5 transition-all"
+                className="p-1.5 rounded-sm text-indigo-400 hover:text-indigo-300 hover:bg-white/5 transition-all"
                 title="Start Synced Timer"
               >
                 <Play className="w-3.5 h-3.5 fill-indigo-400" />
@@ -520,7 +520,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
             <button
               onClick={() => handleTimerAction('reset')}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+              className="p-1.5 rounded-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
               title="Reset Timer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -533,7 +533,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Ambient Sound Button */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'audio' ? null : 'audio')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition-all ${
               activeDrawer === 'audio' || isAmbientActive
                 ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 shadow-sm shadow-indigo-500/20'
                 : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
@@ -549,7 +549,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Tasks Button */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'tasks' ? null : 'tasks')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition-all ${
               activeDrawer === 'tasks'
                 ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 shadow-sm shadow-indigo-500/20'
                 : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
@@ -558,7 +558,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             <CheckSquare className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Tasks</span>
             {tasks.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-white/10 text-[10px] text-indigo-300">
+              <span className="px-1.5 py-0.2 rounded-sm bg-white/10 text-[10px] text-indigo-300">
                 {completedTasksCount}/{tasks.length}
               </span>
             )}
@@ -570,7 +570,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               setActiveDrawer(activeDrawer === 'chat' ? null : 'chat');
               setUnreadChatCount(0);
             }}
-            className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition-all ${
               activeDrawer === 'chat'
                 ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 shadow-sm shadow-indigo-500/20'
                 : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
@@ -579,7 +579,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             <MessageSquare className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Chat</span>
             {unreadChatCount > 0 && activeDrawer !== 'chat' && (
-              <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-pink-500 text-[10px] text-white font-bold leading-none animate-bounce">
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-sm bg-pink-500 text-[10px] text-white font-bold leading-none animate-bounce">
                 {unreadChatCount}
               </span>
             )}
@@ -595,7 +595,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-w-7xl mx-auto h-full auto-rows-fr">
             
             {/* 1. Local User Tile */}
-            <div className="relative bg-[#141721] rounded-2xl border-2 border-indigo-500/30 overflow-hidden shadow-xl aspect-video flex items-center justify-center group">
+            <div className="relative bg-[#141721] rounded border-2 border-indigo-500/30 overflow-hidden shadow-xl aspect-video flex items-center justify-center group">
               {/* Actual Video Preview or Simulated Avatar */}
               {localStream && videoActive ? (
                 <video
@@ -607,9 +607,9 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center p-6 text-center">
-                  <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-pink-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-600/30 mb-3 ring-4 ring-white/5">
+                  <div className="relative w-16 h-16 rounded bg-gradient-to-tr from-indigo-600 to-pink-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-600/30 mb-3 ring-2 ring-white/10">
                     {user ? user.display_name.charAt(0).toUpperCase() : 'Y'}
-                    <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#141721]"></span>
+                    <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border border-[#141721]"></span>
                   </div>
                   <span className="text-xs font-semibold text-white">{user ? user.display_name : 'You (Host)'}</span>
                   <span className="text-[10px] text-slate-400 mt-0.5">Camera Muted • Focused</span>
@@ -618,18 +618,18 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
               {/* Top status overlay */}
               <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10">
+                <span className="px-2 py-0.5 rounded-sm bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10">
                   You {screenSharing ? '(Screen Sharing)' : ''}
                 </span>
 
                 <div className="flex items-center space-x-1">
                   {!micActive && (
-                    <span className="p-1 rounded-md bg-rose-500/80 text-white">
+                    <span className="p-1 rounded-sm bg-rose-500/80 text-white">
                       <MicOff className="w-3 h-3" />
                     </span>
                   )}
                   {!videoActive && (
-                    <span className="p-1 rounded-md bg-slate-800 text-slate-400">
+                    <span className="p-1 rounded-sm bg-slate-800 text-slate-400">
                       <VideoOff className="w-3 h-3" />
                     </span>
                   )}
@@ -638,7 +638,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
               {/* Bottom Subject Goal Pill */}
               <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-                <div className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 text-[11px] text-slate-200 truncate flex items-center space-x-1.5">
+                <div className="px-2.5 py-1 rounded-sm bg-black/70 backdrop-blur-md border border-white/10 text-[11px] text-slate-200 truncate flex items-center space-x-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
                   <span className="truncate">{statusText}</span>
                 </div>
@@ -654,13 +654,13 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               return (
                 <div
                   key={peer.socketId}
-                  className="relative bg-[#141721] rounded-2xl border border-white/10 overflow-hidden shadow-xl aspect-video flex items-center justify-center group"
+                  className="relative bg-[#141721] rounded border border-white/10 overflow-hidden shadow-xl aspect-video flex items-center justify-center group"
                 >
                   {/* Avatar Tile */}
                   <div className="flex flex-col items-center justify-center p-6 text-center">
-                    <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-purple-600/30 mb-3 ring-4 ring-white/5">
+                    <div className="relative w-16 h-16 rounded bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-purple-600/30 mb-3 ring-2 ring-white/10">
                       {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
-                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#141721]"></span>
+                      <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border border-[#141721]"></span>
                     </div>
                     <span className="text-xs font-semibold text-white">{peer.user?.display_name || 'Study Peer'}</span>
                     <span className="text-[10px] text-indigo-400 mt-0.5">● Deep Focus Grind</span>
@@ -668,13 +668,13 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
                   {/* Top status overlay */}
                   <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                    <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10">
+                    <span className="px-2 py-0.5 rounded-sm bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10">
                       {peer.user?.display_name || 'Peer'}
                     </span>
 
                     <div className="flex items-center space-x-1">
                       {!isPeerMic && (
-                        <span className="p-1 rounded-md bg-rose-500/80 text-white">
+                        <span className="p-1 rounded-sm bg-rose-500/80 text-white">
                           <MicOff className="w-3 h-3" />
                         </span>
                       )}
@@ -683,7 +683,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
                   {/* Bottom Subject Goal Pill */}
                   <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-                    <div className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 text-[11px] text-slate-200 truncate flex items-center space-x-1.5">
+                    <div className="px-2.5 py-1 rounded-sm bg-black/70 backdrop-blur-md border border-white/10 text-[11px] text-slate-200 truncate flex items-center space-x-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
                       <span className="truncate">{peer.statusText || 'Focusing...'}</span>
                     </div>
@@ -858,11 +858,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                     placeholder="Add a focus milestone..."
                     value={newTaskInput}
                     onChange={(e) => setNewTaskInput(e.target.value)}
-                    className="flex-1 bg-[#1c202e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="flex-1 bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                   <button
                     type="submit"
-                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                    className="px-3 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                   >
                     Add
                   </button>
@@ -879,7 +879,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   tasks.map(task => (
                     <div
                       key={task.id}
-                      className={`flex items-start justify-between p-2.5 rounded-xl border transition-all ${
+                      className={`flex items-start justify-between p-2.5 rounded-sm border transition-all ${
                         task.completed 
                           ? 'bg-emerald-500/10 border-emerald-500/20 text-slate-400 line-through' 
                           : 'bg-[#1c202e] border-white/5 text-slate-200'
@@ -890,7 +890,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                           type="checkbox"
                           checked={Boolean(task.completed)}
                           onChange={() => handleToggleTask(task.id)}
-                          className="mt-0.5 rounded accent-indigo-500 cursor-pointer"
+                          className="mt-0.5 rounded-sm accent-indigo-500 cursor-pointer"
                         />
                         <span className="text-xs break-words">{task.title}</span>
                       </label>
@@ -953,10 +953,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                         {isMe ? 'You' : msg.user?.display_name || 'Peer'}
                       </span>
                       <div
-                        className={`px-3 py-2 rounded-2xl text-xs max-w-[85%] break-words ${
+                        className={`px-3 py-2 rounded-sm text-xs max-w-[85%] break-words ${
                           isMe 
-                            ? 'bg-indigo-600 text-white rounded-br-none' 
-                            : 'bg-[#1c202e] text-slate-200 border border-white/5 rounded-bl-none'
+                            ? 'bg-indigo-600 text-white' 
+                            : 'bg-[#1c202e] text-slate-200 border border-white/5'
                         }`}
                       >
                         {msg.text}
@@ -975,11 +975,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   placeholder="Send a quiet encouragement..."
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  className="flex-1 bg-[#1c202e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="flex-1 bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
                 <button
                   type="submit"
-                  className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
+                  className="p-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
                 >
                   <Send className="w-3.5 h-3.5" />
                 </button>
@@ -999,7 +999,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             <button
               key={emoji}
               onClick={() => handleSendReaction(emoji)}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-sm sm:text-base hover:scale-125 transition-transform"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-sm bg-white/5 hover:bg-white/15 border border-white/10 text-sm sm:text-base hover:scale-110 transition-transform"
               title={`Send ${emoji}`}
             >
               {emoji}
@@ -1012,7 +1012,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Mic */}
           <button
             onClick={toggleMic}
-            className={`p-3 rounded-2xl flex items-center justify-center transition-all shadow-md ${
+            className={`p-3 rounded flex items-center justify-center transition-all shadow-md ${
               micActive
                 ? 'bg-indigo-600 text-white shadow-indigo-600/30'
                 : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30'
@@ -1025,7 +1025,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Camera */}
           <button
             onClick={toggleVideo}
-            className={`p-3 rounded-2xl flex items-center justify-center transition-all shadow-md ${
+            className={`p-3 rounded flex items-center justify-center transition-all shadow-md ${
               videoActive
                 ? 'bg-indigo-600 text-white shadow-indigo-600/30'
                 : 'bg-slate-800 text-slate-400 border border-white/10 hover:bg-slate-700'
@@ -1038,7 +1038,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Screen Share */}
           <button
             onClick={toggleScreenShare}
-            className={`p-3 rounded-2xl flex items-center justify-center transition-all shadow-md ${
+            className={`p-3 rounded flex items-center justify-center transition-all shadow-md ${
               screenSharing
                 ? 'bg-emerald-600 text-white shadow-emerald-600/30'
                 : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10'
@@ -1053,7 +1053,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         <div>
           <button
             onClick={onLeaveRoom}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 text-xs font-semibold transition-all hover:scale-[1.02]"
+            className="flex items-center space-x-2 px-4 py-2.5 rounded bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 text-xs font-semibold transition-all hover:scale-[1.02]"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Leave Room</span>
@@ -1064,7 +1064,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       {/* Modal: Edit Subject Goal */}
       {showStatusModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-sm bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-sm bg-[#141721] border border-white/10 rounded p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-2">What are you working on?</h3>
             <p className="text-xs text-slate-400 mb-4">
               Your focus label is visible to other students in the study hall to keep you accountable.
@@ -1076,19 +1076,19 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 placeholder="e.g. Solving Graph DP Problems"
                 value={statusText}
                 onChange={(e) => setStatusText(e.target.value)}
-                className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
               <div className="flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowStatusModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2 rounded-sm text-xs font-semibold text-slate-400 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                 >
                   Update Goal
                 </button>

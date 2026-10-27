@@ -114,7 +114,7 @@ export default function AnalyticsView({ onOpenAuth }) {
 
         <button
           onClick={() => setShowLogModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 flex items-center space-x-1.5 self-start sm:self-auto transition-all"
+          className="px-4 py-2.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 flex items-center space-x-1.5 self-start sm:self-auto transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>Log Offline Session</span>
@@ -125,10 +125,10 @@ export default function AnalyticsView({ onOpenAuth }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         
         {/* Streak Card */}
-        <div className="bg-[#141721] border border-white/10 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-slate-400">Current Streak</span>
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div className="p-2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
               <Flame className="w-4 h-4 fill-amber-400" />
             </div>
           </div>
@@ -142,10 +142,10 @@ export default function AnalyticsView({ onOpenAuth }) {
         </div>
 
         {/* Total Hours */}
-        <div className="bg-[#141721] border border-white/10 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-slate-400">Total Hours Focused</span>
-            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div className="p-2 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <Clock className="w-4 h-4" />
             </div>
           </div>
@@ -159,10 +159,10 @@ export default function AnalyticsView({ onOpenAuth }) {
         </div>
 
         {/* Today's Goal Progress */}
-        <div className="bg-[#141721] border border-white/10 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-slate-400">Today's Focus Goal</span>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div className="p-2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <Award className="w-4 h-4" />
             </div>
           </div>
@@ -170,19 +170,19 @@ export default function AnalyticsView({ onOpenAuth }) {
             <span className="text-3xl font-extrabold text-white">{todayMinutes}</span>
             <span className="text-xs font-medium text-slate-400">/ {dailyGoalMinutes} mins</span>
           </div>
-          <div className="w-full bg-[#1c202e] rounded-full h-1.5 mt-3 overflow-hidden">
+          <div className="w-full bg-[#1c202e] rounded-sm h-1.5 mt-3 overflow-hidden">
             <div 
-              className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" 
+              className="bg-emerald-500 h-1.5 rounded-sm transition-all duration-500" 
               style={{ width: `${goalPercentage}%` }}
             ></div>
           </div>
         </div>
 
         {/* Tasks Completed */}
-        <div className="bg-[#141721] border border-white/10 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-slate-400">Tasks Completed</span>
-            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div className="p-2 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
@@ -200,7 +200,7 @@ export default function AnalyticsView({ onOpenAuth }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         
         {/* 7-Day Bar Chart */}
-        <div className="lg:col-span-2 bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-lg">
+        <div className="lg:col-span-2 bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-sm font-bold text-white">Recent Daily Focus Activity</h3>
@@ -221,10 +221,10 @@ export default function AnalyticsView({ onOpenAuth }) {
                     <span className="text-[10px] font-mono font-semibold text-indigo-300 opacity-0 group-hover:opacity-100 transition-opacity">
                       {item.minutes}m
                     </span>
-                    <div className="w-full max-w-[40px] bg-[#1c202e] rounded-t-lg h-36 flex items-end overflow-hidden">
+                    <div className="w-full max-w-[40px] bg-[#1c202e] rounded-t-sm h-36 flex items-end overflow-hidden">
                       <div
                         style={{ height: `${heightPercent}%` }}
-                        className="w-full bg-gradient-to-t from-indigo-600 to-pink-500 rounded-t-lg transition-all duration-500 group-hover:brightness-110"
+                        className="w-full bg-gradient-to-t from-indigo-600 to-pink-500 rounded-t-sm transition-all duration-500 group-hover:brightness-110"
                       ></div>
                     </div>
                     <span className="text-[11px] text-slate-400 font-medium">{dayLabel}</span>
@@ -240,7 +240,7 @@ export default function AnalyticsView({ onOpenAuth }) {
         </div>
 
         {/* Subjects Breakdown */}
-        <div className="bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-lg">
+        <div className="bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-sm font-bold text-white">Subject Breakdown</h3>
@@ -261,9 +261,9 @@ export default function AnalyticsView({ onOpenAuth }) {
                       <span className="font-semibold text-slate-200 truncate pr-2">{sub.subject}</span>
                       <span className="text-slate-400 font-mono">{sub.minutes} mins ({percent}%)</span>
                     </div>
-                    <div className="w-full bg-[#1c202e] rounded-full h-1.5 overflow-hidden">
+                    <div className="w-full bg-[#1c202e] rounded-sm h-1.5 overflow-hidden">
                       <div
-                        className="bg-indigo-500 h-1.5 rounded-full"
+                        className="bg-indigo-500 h-1.5 rounded-sm"
                         style={{ width: `${percent}%` }}
                       ></div>
                     </div>
@@ -280,7 +280,7 @@ export default function AnalyticsView({ onOpenAuth }) {
       </div>
 
       {/* Past Sessions Log Table */}
-      <div className="bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-lg">
+      <div className="bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
         <h3 className="text-sm font-bold text-white mb-4">Focus Session History</h3>
         
         {sessions.length === 0 ? (
@@ -304,7 +304,7 @@ export default function AnalyticsView({ onOpenAuth }) {
                     <td className="py-3 text-slate-300">{s.room_name || 'Personal Focus'}</td>
                     <td className="py-3 font-mono font-semibold text-indigo-400">{s.duration_minutes} mins</td>
                     <td className="py-3">
-                      <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold uppercase">
+                      <span className="px-2 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold uppercase">
                         {s.mode}
                       </span>
                     </td>
@@ -322,7 +322,7 @@ export default function AnalyticsView({ onOpenAuth }) {
       {/* Manual Session Log Modal */}
       {showLogModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-sm bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-sm bg-[#141721] border border-white/10 rounded p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-2">Log Offline Study Session</h3>
             <p className="text-xs text-slate-400 mb-4">
               Studied away from the computer? Log your reading or textbook hours to maintain your streak!
@@ -337,7 +337,7 @@ export default function AnalyticsView({ onOpenAuth }) {
                   placeholder="e.g. Distributed Database Consistency Models"
                   value={logSubject}
                   onChange={(e) => setLogSubject(e.target.value)}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -346,7 +346,7 @@ export default function AnalyticsView({ onOpenAuth }) {
                 <select
                   value={logMins}
                   onChange={(e) => setLogMins(Number(e.target.value))}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 >
                   <option value={25}>25 Minutes (1 Pomodoro)</option>
                   <option value={50}>50 Minutes (2 Pomodoros)</option>
@@ -360,14 +360,14 @@ export default function AnalyticsView({ onOpenAuth }) {
                 <button
                   type="button"
                   onClick={() => setShowLogModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2 rounded-sm text-xs font-semibold text-slate-400 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingLog}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                 >
                   {submittingLog ? 'Saving...' : 'Save & Update Streak'}
                 </button>

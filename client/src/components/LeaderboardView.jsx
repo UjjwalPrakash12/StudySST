@@ -28,7 +28,7 @@ export default function LeaderboardView() {
       
       {/* Header */}
       <div className="text-center max-w-xl mx-auto mb-10">
-        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
+        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-sm bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
           <Trophy className="w-3.5 h-3.5" />
           <span>Global Focus Rankings</span>
         </div>
@@ -50,12 +50,12 @@ export default function LeaderboardView() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 items-end">
               
               {/* #2 Silver */}
-              <div className="bg-[#141721] border border-white/10 rounded-2xl p-6 text-center order-2 md:order-1 flex flex-col items-center shadow-lg">
+              <div className="bg-[#141721] border border-white/10 rounded p-6 text-center order-2 md:order-1 flex flex-col items-center shadow-lg">
                 <div className="relative mb-3">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-slate-400 to-slate-200 text-[#0c0e14] font-extrabold text-xl flex items-center justify-center ring-4 ring-slate-400/30">
+                  <div className="w-16 h-16 rounded bg-gradient-to-tr from-slate-400 to-slate-200 text-[#0c0e14] font-extrabold text-xl flex items-center justify-center ring-2 ring-slate-400/30">
                     {top3[1].display_name.charAt(0)}
                   </div>
-                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-slate-300 text-[#0c0e14] font-bold text-xs shadow">
+                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-sm bg-slate-300 text-[#0c0e14] font-bold text-xs shadow">
                     #2
                   </span>
                 </div>
@@ -73,13 +73,13 @@ export default function LeaderboardView() {
               </div>
 
               {/* #1 Gold (Taller, Glowing) */}
-              <div className="bg-gradient-to-b from-[#1b1f30] to-[#141721] border-2 border-amber-500/50 rounded-2xl p-7 text-center order-1 md:order-2 flex flex-col items-center shadow-2xl shadow-amber-500/10 md:-translate-y-3">
+              <div className="bg-gradient-to-b from-[#1b1f30] to-[#141721] border-2 border-amber-500/50 rounded p-7 text-center order-1 md:order-2 flex flex-col items-center shadow-2xl shadow-amber-500/10 md:-translate-y-3">
                 <div className="relative mb-3">
                   <Crown className="w-6 h-6 text-amber-400 fill-amber-400 absolute -top-5 left-1/2 -translate-x-1/2 animate-bounce" />
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-200 text-[#0c0e14] font-black text-2xl flex items-center justify-center ring-4 ring-amber-400/40">
+                  <div className="w-20 h-20 rounded bg-gradient-to-tr from-amber-400 to-yellow-200 text-[#0c0e14] font-black text-2xl flex items-center justify-center ring-2 ring-amber-400/40">
                     {top3[0].display_name.charAt(0)}
                   </div>
-                  <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-full bg-amber-400 text-[#0c0e14] font-extrabold text-xs shadow-md">
+                  <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-sm bg-amber-400 text-[#0c0e14] font-extrabold text-xs shadow-md">
                     #1
                   </span>
                 </div>
@@ -97,12 +97,12 @@ export default function LeaderboardView() {
               </div>
 
               {/* #3 Bronze */}
-              <div className="bg-[#141721] border border-white/10 rounded-2xl p-6 text-center order-3 flex flex-col items-center shadow-lg">
+              <div className="bg-[#141721] border border-white/10 rounded p-6 text-center order-3 flex flex-col items-center shadow-lg">
                 <div className="relative mb-3">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-700 to-amber-500 text-white font-extrabold text-xl flex items-center justify-center ring-4 ring-amber-700/30">
+                  <div className="w-16 h-16 rounded bg-gradient-to-tr from-amber-700 to-amber-500 text-white font-extrabold text-xl flex items-center justify-center ring-2 ring-amber-700/30">
                     {top3[2].display_name.charAt(0)}
                   </div>
-                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-amber-700 text-white font-bold text-xs shadow">
+                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-sm bg-amber-700 text-white font-bold text-xs shadow">
                     #3
                   </span>
                 </div>
@@ -122,7 +122,7 @@ export default function LeaderboardView() {
           )}
 
           {/* Leaderboard Table */}
-          <div className="bg-[#141721] border border-white/10 rounded-2xl p-6 shadow-lg">
+          <div className="bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
             <h3 className="text-sm font-bold text-white mb-4">Complete Rankings</h3>
             
             <div className="overflow-x-auto">
@@ -146,7 +146,7 @@ export default function LeaderboardView() {
                         </td>
                         <td className="py-3">
                           <div className="flex items-center space-x-2.5">
-                            <div className="w-7 h-7 rounded-full bg-indigo-600/30 text-indigo-300 font-bold flex items-center justify-center text-[11px] border border-indigo-500/30">
+                            <div className="w-7 h-7 rounded-sm bg-indigo-600/30 text-indigo-300 font-bold flex items-center justify-center text-[11px] border border-indigo-500/30">
                               {u.display_name.charAt(0)}
                             </div>
                             <span className="font-semibold text-white">{u.display_name}</span>

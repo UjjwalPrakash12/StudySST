@@ -49,20 +49,20 @@ export default function AuthModal({ isOpen, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div 
-        className="relative w-full max-w-md bg-[#141721] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-indigo-950/50"
+        className="relative w-full max-w-md bg-[#141721] border border-white/10 rounded p-6 sm:p-8 shadow-2xl shadow-indigo-950/50"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-all"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-sm hover:bg-white/5 transition-all"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600/20 text-indigo-400 mb-3 border border-indigo-500/30">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded bg-indigo-600/20 text-indigo-400 mb-3 border border-indigo-500/30">
             <Sparkles className="w-6 h-6" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
@@ -76,7 +76,7 @@ export default function AuthModal({ isOpen, onClose }) {
         </div>
 
         {/* 1-Click Demo Login Banner for Evaluators */}
-        <div className="mb-6 p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/60 to-purple-950/60 border border-indigo-500/30">
+        <div className="mb-6 p-3.5 rounded bg-gradient-to-r from-indigo-950/60 to-purple-950/60 border border-indigo-500/30">
           <div className="flex items-start space-x-3">
             <ShieldCheck className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -88,7 +88,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 type="button"
                 onClick={handleDemoLogin}
                 disabled={submitting}
-                className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md shadow-indigo-600/30 transition-all"
+                className="mt-2.5 w-full py-1.5 px-3 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md shadow-indigo-600/30 transition-all"
               >
                 <span>⚡ 1-Click Quick Demo Login</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -104,7 +104,7 @@ export default function AuthModal({ isOpen, onClose }) {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+          <div className="mb-4 p-3 rounded-sm bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
             {error}
           </div>
         )}
@@ -121,7 +121,7 @@ export default function AuthModal({ isOpen, onClose }) {
                   placeholder="e.g. Alex Rivers"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -139,7 +139,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 placeholder="your_handle"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-[#1c202e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#1c202e] border border-white/10 rounded-sm pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
             </div>
           </div>
@@ -155,7 +155,7 @@ export default function AuthModal({ isOpen, onClose }) {
                   placeholder="you@domain.edu"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -171,7 +171,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#1c202e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#1c202e] border border-white/10 rounded-sm pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
             </div>
           </div>
@@ -179,7 +179,7 @@ export default function AuthModal({ isOpen, onClose }) {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full mt-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+            className="w-full mt-2 py-2.5 px-4 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
           >
             {submitting ? 'Authenticating...' : isRegisterMode ? 'Create Account' : 'Sign In'}
           </button>

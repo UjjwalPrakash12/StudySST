@@ -51,18 +51,18 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div 
-        className="relative w-full max-w-lg bg-[#141721] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-indigo-950/50"
+        className="relative w-full max-w-lg bg-[#141721] border border-white/10 rounded p-6 sm:p-8 shadow-2xl shadow-indigo-950/50"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-all"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-sm hover:bg-white/5 transition-all"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+          <div className="w-10 h-10 rounded bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
@@ -72,7 +72,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+          <div className="mb-4 p-3 rounded-sm bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
             {error}
           </div>
         )}
@@ -86,7 +86,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
               placeholder="e.g. Distributed Systems & Algorithms Sprint"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -97,7 +97,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
               placeholder="e.g. Cameras on, solving Leetcode graph problems & mock interviews"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -112,7 +112,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
                     key={cat.label}
                     type="button"
                     onClick={() => setCategory(cat.label)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium border text-left transition-all ${
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-sm text-xs font-medium border text-left transition-all ${
                       isSelected
                         ? 'bg-indigo-600/25 border-indigo-500 text-white shadow-sm shadow-indigo-500/30'
                         : 'bg-white/5 border-white/5 text-slate-300 hover:bg-white/10'
@@ -132,7 +132,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
               <select
                 value={workMins}
                 onChange={(e) => setWorkMins(Number(e.target.value))}
-                className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value={20}>20 Minutes</option>
                 <option value={25}>25 Minutes (Classic)</option>
@@ -147,7 +147,7 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
               <select
                 value={breakMins}
                 onChange={(e) => setBreakMins(Number(e.target.value))}
-                className="w-full bg-[#1c202e] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value={3}>3 Minutes</option>
                 <option value={5}>5 Minutes (Classic)</option>
@@ -161,14 +161,14 @@ export default function CreateRoomModal({ isOpen, onClose, onRoomCreated }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+              className="px-4 py-2.5 rounded-sm text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+              className="px-5 py-2.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               <span>{submitting ? 'Creating...' : 'Create Study Hall'}</span>
