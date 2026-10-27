@@ -2,13 +2,14 @@
   "name": "studystream-live-root",
   "version": "1.0.0",
   "description": "StudyStream Live - Real-Time Virtual Coworking & Study Room Platform",
+  "main": "server.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
     "install:all": "npm install && npm --prefix server install && npm --prefix client install",
-    "build": "npm --prefix client run build",
-    "start": "npm --prefix server start"
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "start": "node server.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
