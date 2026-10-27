@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { X, Sparkles, User, Mail, Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { X, Sparkles, User, Mail, Lock } from 'lucide-react';
 
 export default function AuthModal({ isOpen, onClose }) {
   const { login, register } = useAuth();
@@ -28,19 +28,6 @@ export default function AuthModal({ isOpen, onClose }) {
       onClose();
     } catch (err) {
       setError(err.message || 'Authentication failed');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setError('');
-    setSubmitting(true);
-    try {
-      await login('student_demo', 'demo1234');
-      onClose();
-    } catch (err) {
-      setError(err.message || 'Demo login failed');
     } finally {
       setSubmitting(false);
     }
@@ -75,34 +62,6 @@ export default function AuthModal({ isOpen, onClose }) {
           </p>
         </div>
 
-        {/* 1-Click Demo Login Banner for Evaluators */}
-        <div className="mb-6 p-4 rounded-[12px] bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] shadow-sm">
-          <div className="flex items-start space-x-3">
-            <ShieldCheck className="w-5 h-5 text-[#D4A373] flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="text-xs font-bold text-[#40382F]">Evaluator / Demo Mode</h4>
-              <p className="text-[11px] text-[#75695A] mt-0.5 font-normal">
-                Instant access with preloaded 4-day streak, past sessions, and demo tasks.
-              </p>
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                disabled={submitting}
-                className="mt-3 w-full py-2 px-3 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold flex items-center justify-center space-x-1.5 shadow-sm transition-all"
-              >
-                <span>⚡ 1-Click Quick Demo Login</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative flex py-2 items-center mb-4">
-          <div className="flex-grow border-t border-[rgba(64,56,47,0.14)]"></div>
-          <span className="flex-shrink mx-3 text-[#75695A] text-xs uppercase tracking-wider font-semibold">or sign in with password</span>
-          <div className="flex-grow border-t border-[rgba(64,56,47,0.14)]"></div>
-        </div>
-
         {error && (
           <div className="mb-4 p-3 rounded-[10px] bg-rose-50 border border-rose-200 text-rose-800 text-xs">
             {error}
@@ -118,7 +77,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Alex Rivers"
+                  placeholder="e.g. Alex"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"

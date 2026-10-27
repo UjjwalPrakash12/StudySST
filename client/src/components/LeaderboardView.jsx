@@ -317,6 +317,14 @@ export default function LeaderboardView() {
                   })}
                 </tbody>
               </table>
+
+              {leaderboard.length === 0 && (
+                <div className="py-12 text-center">
+                  <Trophy className="w-10 h-10 text-[#75695A]/40 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-[#40382F]">No Live Study Hours Recorded Yet</p>
+                  <p className="text-[11px] text-[#75695A] mt-1">Join any study hall to start streaming and claim #1 on the leaderboard!</p>
+                </div>
+              )}
             </div>
           </div>
         </>

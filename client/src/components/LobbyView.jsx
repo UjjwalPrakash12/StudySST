@@ -99,7 +99,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               <div className="w-2.5 h-2.5 rounded-full bg-[#D4A373] animate-ping"></div>
               <div>
                 <p className="text-[#75695A] text-[11px]">Live Active Peers</p>
-                <p className="font-bold text-[#40382F] text-sm">{Math.max(totalOnline, 1)} Studying Now</p>
+                <p className="font-bold text-[#40382F] text-sm">{totalOnline} Studying Now</p>
               </div>
             </div>
 
