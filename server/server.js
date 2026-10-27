@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const multer = require('multer');
+const { AccessToken } = require('livekit-server-sdk');
 const db = require('./db');
 const { connectMongoDB, getIsConnected, models } = require('./mongodb');
 
@@ -851,6 +852,63 @@ app.get('/api/presence/stats', (req, res) => {
 });
 
 // ==========================================
+// API Routes: High-Scale SFU Media (LiveKit)
+// ==========================================
+app.get('/api/livekit/token', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+    if (!livekitUrl || !apiKey || !apiSecret) {
+      return res.json({
+        sfuEnabled: false,
+        message: 'LiveKit SFU not configured in environment. Running in bandwidth-optimized WebRTC mode.'
+      });
+    }
+
+    const { roomId, username } = req.query;
+    if (!roomId) {
+      return res.status(400).json({ error: 'roomId parameter is required' });
+    }
+
+    const participantIdentity = req.user 
+      ? req.user.id 
+      : (req.query.userId || 'guest-' + crypto.randomUUID().slice(0, 8));
+    const participantName = req.user 
+      ? (req.user.display_name || req.user.username) 
+      : (username || 'Scholar ' + Math.floor(Math.random() * 1000));
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: participantIdentity,
+      name: participantName,
+      ttl: '8h',
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: roomId,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    const token = await at.toJwt();
+
+    res.json({
+      sfuEnabled: true,
+      token,
+      url: livekitUrl,
+      identity: participantIdentity,
+      name: participantName
+    });
+  } catch (error) {
+    console.error('Error generating LiveKit token:', error);
+    res.status(500).json({ error: 'Failed to generate LiveKit media token' });
+  }
+});
+
+// ==========================================
 // API Routes: Study Rooms
 // ==========================================
 function getAccurateRoomOnlineCount(roomId) {
@@ -1231,6 +1289,15 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Capacity limit protection to prevent server overload
+    const MAX_ROOM_CAPACITY = parseInt(process.env.MAX_ROOM_CAPACITY, 10) || 50;
+    if (roomState.participants.size >= MAX_ROOM_CAPACITY) {
+      socket.emit('room-error', {
+        message: `Study hall has reached maximum capacity (${MAX_ROOM_CAPACITY} scholars). Please select another hall.`
+      });
+      return;
+    }
+
     const participantInfo = {
       socketId: socket.id,
       user: currentUser,
@@ -1242,46 +1309,53 @@ io.on('connection', (socket) => {
     roomState.participants.set(socket.id, participantInfo);
 
     // If registered user, start live session in DB
-    if (currentUser.id && !currentUser.id.startsWith('guest-')) {
-      const sessionId = 'live-' + crypto.randomUUID();
-      const nowMs = Date.now();
+    try {
+      if (currentUser.id && !currentUser.id.startsWith('guest-')) {
+        const existingUser = db.prepare('SELECT id FROM users WHERE id = ?').get(currentUser.id);
+        if (existingUser) {
+          const sessionId = 'live-' + crypto.randomUUID();
+          const nowMs = Date.now();
 
-      // Close any previous dangling session for this user
-      db.prepare(`
-        UPDATE live_sessions 
-        SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
-        WHERE user_id = ? AND is_active = 1
-      `).run(currentUser.id);
+          // Close any previous dangling session for this user
+          db.prepare(`
+            UPDATE live_sessions 
+            SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
+            WHERE user_id = ? AND is_active = 1
+          `).run(currentUser.id);
 
-      db.prepare(`
-        INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, duration_seconds, is_active)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1)
-      `).run(sessionId, currentUser.id, roomId, socket.id);
+          db.prepare(`
+            INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, duration_seconds, is_active)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1)
+          `).run(sessionId, currentUser.id, roomId, socket.id);
 
-      db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
+          db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
 
-      activeLiveSessions.set(socket.id, {
-        sessionId,
-        userId: currentUser.id,
-        roomId,
-        startedAt: nowMs,
-        lastHeartbeat: nowMs,
-        lastCreditedAt: nowMs,
-      });
+          activeLiveSessions.set(socket.id, {
+            sessionId,
+            userId: currentUser.id,
+            roomId,
+            startedAt: nowMs,
+            lastHeartbeat: nowMs,
+            lastCreditedAt: nowMs,
+          });
 
-      // Acknowledge session started to client with verified start timestamp
-      socket.emit('session-live-started', {
-        sessionId,
-        startedAt: nowMs,
-        isLive: true
-      });
+          // Acknowledge session started to client with verified start timestamp
+          socket.emit('session-live-started', {
+            sessionId,
+            startedAt: nowMs,
+            isLive: true
+          });
 
-      // Broadcast user is live globally
-      io.emit('user-live-status-changed', {
-        userId: currentUser.id,
-        isLive: true,
-        roomId
-      });
+          // Broadcast user is live globally
+          io.emit('user-live-status-changed', {
+            userId: currentUser.id,
+            isLive: true,
+            roomId
+          });
+        }
+      }
+    } catch (sessionErr) {
+      console.warn('[Session] Warning creating live session record:', sessionErr.message);
     }
 
     const allParticipants = Array.from(roomState.participants.values());
@@ -1341,24 +1415,33 @@ io.on('connection', (socket) => {
   });
 
   // 3. WebRTC Mesh Signaling Relay
-  socket.on('webrtc-offer', ({ to, offer, senderInfo }) => {
-    io.to(to).emit('webrtc-offer', {
+  socket.on('webrtc-offer', ({ to, targetSocketId, offer, senderInfo }) => {
+    const target = to || targetSocketId;
+    if (!target) return;
+    io.to(target).emit('webrtc-offer', {
       from: socket.id,
+      senderSocketId: socket.id,
       offer,
       senderInfo: senderInfo || currentUser
     });
   });
 
-  socket.on('webrtc-answer', ({ to, answer }) => {
-    io.to(to).emit('webrtc-answer', {
+  socket.on('webrtc-answer', ({ to, targetSocketId, answer }) => {
+    const target = to || targetSocketId;
+    if (!target) return;
+    io.to(target).emit('webrtc-answer', {
       from: socket.id,
+      senderSocketId: socket.id,
       answer
     });
   });
 
-  socket.on('webrtc-ice-candidate', ({ to, candidate }) => {
-    io.to(to).emit('webrtc-ice-candidate', {
+  socket.on('webrtc-ice-candidate', ({ to, targetSocketId, candidate }) => {
+    const target = to || targetSocketId;
+    if (!target) return;
+    io.to(target).emit('webrtc-ice-candidate', {
       from: socket.id,
+      senderSocketId: socket.id,
       candidate
     });
   });

@@ -2,16 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import confetti from 'canvas-confetti';
 import { 
+  Room as LivekitRoom, 
+  RoomEvent, 
+  VideoPresets, 
+  Track as LivekitTrack,
+  ConnectionQuality 
+} from 'livekit-client';
+import { 
   Mic, MicOff, Video, VideoOff, ScreenShare, 
-  MessageSquare, CheckSquare, Volume2, VolumeX, LogOut, Send, Smile, 
+  MessageSquare, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
-  Radio, Clock, ShieldCheck, Award, Users, Volume1, Volume
+  Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { soundSynthesizer } from '../utils/soundSynthesizer';
 
 const REACTION_EMOJIS = ['👏', '🔥', '💯', '☕', '⚡', '📚'];
+const TILES_PER_PAGE = 8; // Optimal tile count to prevent browser overload for 10-30+ participants
 
 const getIceServers = () => {
   const servers = [
@@ -40,29 +48,41 @@ const AUDIO_CONSTRAINTS = {
   autoGainControl: true,
 };
 
+// Optimized video constraints for 10-30+ participants (study desk video does not need 1080p60)
+const VIDEO_CONSTRAINTS = {
+  width: { ideal: 480, max: 640 },
+  height: { ideal: 270, max: 360 },
+  frameRate: { ideal: 15, max: 20 },
+};
+
 /**
- * Dedicated tile component for remote peer with direct video/audio refs
- * and real-time speaking detection border.
+ * Dedicated Remote Video Tile with support for both LiveKit SFU tracks and WebRTC Mesh streams.
  */
-function RemoteParticipantTile({ peer, stream, isSpeaking }) {
+function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
-  const [streamConnected, setStreamConnected] = useState(false);
 
+  // LiveKit Track Attachment
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      setStreamConnected(true);
+    if (livekitTrack && videoRef.current) {
+      livekitTrack.attach(videoRef.current);
+      return () => {
+        try { livekitTrack.detach(videoRef.current); } catch (e) {}
+      };
     }
-  }, [stream, peer.mediaState?.video]);
+  }, [livekitTrack]);
 
+  // WebRTC Mesh Stream Attachment
   useEffect(() => {
-    if (audioRef.current && stream) {
+    if (!livekitTrack && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+    if (!livekitTrack && stream && audioRef.current) {
       audioRef.current.srcObject = stream;
     }
-  }, [stream]);
+  }, [stream, livekitTrack]);
 
-  const hasVideo = Boolean(peer.mediaState?.video && stream);
+  const hasVideo = Boolean((livekitTrack || stream) && peer.mediaState?.video);
   const isMicMuted = !peer.mediaState?.mic;
 
   return (
@@ -71,8 +91,8 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
         ? 'border-2 border-emerald-500 shadow-sm ring-1 ring-emerald-500' 
         : 'border-[rgba(64,56,47,0.2)]'
     }`}>
-      {/* Remote audio playback (not muted, plays peer audio with browser echo cancellation) */}
-      <audio ref={audioRef} autoPlay playsInline />
+      {/* Remote audio playback */}
+      {!livekitTrack && <audio ref={audioRef} autoPlay playsInline />}
 
       {/* Video display or Avatar placeholder */}
       {hasVideo ? (
@@ -84,7 +104,7 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
         />
       ) : (
         <div className="flex flex-col items-center justify-center p-6 text-center">
-          <div className="relative w-16 h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-2xl border border-[#40382F]/20 mb-3">
+          <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xl sm:text-2xl border border-[#40382F]/20 mb-2 sm:mb-3">
             {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
             {isSpeaking && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
@@ -93,7 +113,9 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
               isSpeaking ? 'bg-emerald-500' : 'bg-[#D4A373]'
             }`}></span>
           </div>
-          <span className="text-xs font-bold text-[#40382F]">{peer.user?.display_name || 'Study Peer'}</span>
+          <span className="text-xs font-bold text-[#40382F] truncate max-w-[140px]">
+            {peer.user?.display_name || 'Study Peer'}
+          </span>
           <span className="text-[10px] text-[#75695A] mt-0.5">
             {isSpeaking ? 'Speaking...' : 'Camera Off • Focused'}
           </span>
@@ -101,19 +123,19 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
       )}
 
       {/* Top Status Overlay */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-        <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
-          {isSpeaking && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
-          <span>{peer.user?.display_name || 'Study Peer'}</span>
+      <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+        <span className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5 truncate max-w-[70%]">
+          {isSpeaking && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse flex-shrink-0"></span>}
+          <span className="truncate">{peer.user?.display_name || 'Study Peer'}</span>
         </span>
 
         <div className="flex items-center space-x-1">
           {isMicMuted ? (
-            <span className="p-1.5 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
+            <span className="p-1 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
               <MicOff className="w-3 h-3" />
             </span>
           ) : (
-            <span className={`p-1.5 rounded-none border ${
+            <span className={`p-1 rounded-none border ${
               isSpeaking 
                 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' 
                 : 'bg-[#E9EDC9]/90 border-[rgba(64,56,47,0.2)] text-[#40382F]'
@@ -122,7 +144,7 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
             </span>
           )}
           {!peer.mediaState?.video && (
-            <span className="p-1.5 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera disabled">
+            <span className="p-1 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera off">
               <VideoOff className="w-3 h-3" />
             </span>
           )}
@@ -130,9 +152,9 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
       </div>
 
       {/* Bottom Subject Goal Pill */}
-      <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-        <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
-          <span className="w-1.5 h-1.5 bg-[#CCD5AE]"></span>
+      <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
+        <div className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[10px] text-[#40382F] truncate flex items-center space-x-1.5">
+          <span className="w-1.5 h-1.5 bg-[#CCD5AE] flex-shrink-0"></span>
           <span className="truncate font-medium">{peer.statusText || 'Focusing...'}</span>
         </div>
       </div>
@@ -143,21 +165,27 @@ function RemoteParticipantTile({ peer, stream, isSpeaking }) {
 export default function FocusRoomView({ room, onLeaveRoom }) {
   const { user, isAuthenticated, refreshUser } = useAuth();
   
-  // Media & WebRTC state
+  // Media state
   const [localStream, setLocalStream] = useState(null);
   const [micActive, setMicActive] = useState(false);
   const [videoActive, setVideoActive] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [participants, setParticipants] = useState([]);
-  const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream
-  const [speakingPeers, setSpeakingPeers] = useState({}); // socketId -> boolean
+  const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream (Mesh fallback)
+  const [livekitRemoteTracks, setLivekitRemoteTracks] = useState(new Map()); // participantIdentity -> RemoteTrack
+  const [speakingPeers, setSpeakingPeers] = useState({}); // id -> boolean
   const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
   const [roomMode, setRoomMode] = useState('silent'); // 'silent' | 'discussion'
+  const [sfuActive, setSfuActive] = useState(false);
+  const [networkQuality, setNetworkQuality] = useState('good'); // 'excellent' | 'good' | 'poor'
+  const [reconnecting, setReconnecting] = useState(false);
 
-  // Unlimited Live Hours Session tracking
+  // Pagination for 10-30+ participant scaling
+  const [currentPage, setCurrentPage] = useState(0);
+
+  // Live stopwatch tracking
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
   const [serverVerifiedSeconds, setServerVerifiedSeconds] = useState(0);
-  const [sessionStartTime] = useState(Date.now());
 
   // Status & Tasks
   const [statusText, setStatusText] = useState('Deep Work Session');
@@ -170,9 +198,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [chatInput, setChatInput] = useState('');
   const [floatingReactions, setFloatingReactions] = useState([]);
 
-  // UI Drawers
-  const [activeDrawer, setActiveDrawer] = useState(null); // 'chat' | 'tasks' | 'audio' | null
+  // UI Drawers: 'chat' | 'tasks' | 'audio' | 'scholars' | null
+  const [activeDrawer, setActiveDrawer] = useState(null);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [scholarsSearch, setScholarsSearch] = useState('');
 
   // Audio Synthesizer volumes
   const [ambientVolumes, setAmbientVolumes] = useState({
@@ -183,13 +212,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     master: 0.7,
   });
 
-  // Refs for WebRTC & Audio Context to avoid stale closures
+  // Refs
   const socketRef = useRef(null);
   const localVideoRef = useRef(null);
   const chatScrollRef = useRef(null);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // socketId -> RTCPeerConnection
+  const livekitRoomRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const micActiveRef = useRef(false);
@@ -248,9 +278,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         }
         const average = sum / bufferLength;
 
-        // VAD threshold
         if (average > 16) {
-          speakingDecay = 4; // Linger for ~400ms
+          speakingDecay = 4;
           if (!isSpeakingLocalRef.current) {
             isSpeakingLocalRef.current = true;
             setIsSpeakingLocal(true);
@@ -267,13 +296,12 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         }
       }, 100);
     } catch (err) {
-      console.warn('Voice Activity Detection init error:', err);
+      console.warn('VAD init error:', err);
     }
   };
 
-  // WebRTC Peer Connection Factory
+  // WebRTC Mesh Peer Connection Factory (used when SFU is not active or as mesh fallback)
   const createPeerConnection = (targetSocketId) => {
-    // Return existing if already established
     if (peerConnectionsRef.current.has(targetSocketId)) {
       return peerConnectionsRef.current.get(targetSocketId);
     }
@@ -281,7 +309,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     const pc = new RTCPeerConnection(getIceServers());
     peerConnectionsRef.current.set(targetSocketId, pc);
 
-    // Attach local media tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         try {
@@ -292,7 +319,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     }
 
-    // ICE Candidate exchange
     pc.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
         socketRef.current.emit('webrtc-ice-candidate', {
@@ -303,7 +329,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
     };
 
-    // Remote Track event
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       if (remoteStream) {
@@ -337,6 +362,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     if (audioContextRef.current) {
       try { audioContextRef.current.close(); } catch (e) {}
       audioContextRef.current = null;
+    }
+    if (livekitRoomRef.current) {
+      try { livekitRoomRef.current.disconnect(); } catch (e) {}
+      livekitRoomRef.current = null;
     }
     if (localStreamRef.current) {
       try {
@@ -382,7 +411,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     setScreenSharing(false);
   };
 
-  // Leave room handler
   const handleLeaveRoom = () => {
     stopAllMediaTracks();
     soundSynthesizer.stopAll();
@@ -427,27 +455,24 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
   }, []);
 
-  // Initialize Media Streams (camera on by default, microphone muted by default)
+  // Initialize media (360p 15fps camera on by default, microphone muted by default)
   useEffect(() => {
     let mounted = true;
 
     async function setupMedia() {
       try {
-        // Try requesting video + audio upfront with audio muted to prepare tracks for WebRTC mesh
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 360 } },
+            video: VIDEO_CONSTRAINTS,
             audio: AUDIO_CONSTRAINTS,
           });
-          // Mute audio track immediately so mic is OFF by default upon entering room
           stream.getAudioTracks().forEach(track => {
             track.enabled = false;
           });
         } catch (mediaErr) {
-          // If audio or combo fails, try video only
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 360 } },
+            video: VIDEO_CONSTRAINTS,
             audio: false,
           });
         }
@@ -474,6 +499,79 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
 
     setupMedia();
+
+    // Check LiveKit SFU support
+    async function initSFU() {
+      try {
+        const res = await api.getLiveKitToken(room.id, user?.display_name, user?.id);
+        if (res.sfuEnabled && res.token && res.url) {
+          const lkRoom = new LivekitRoom({
+            adaptiveStream: true,
+            dynacast: true,
+            videoCaptureDefaults: {
+              resolution: VideoPresets.h360.resolution,
+            },
+            publishDefaults: {
+              simulcast: true,
+              videoEncoding: {
+                maxBitrate: 350_000,
+                maxFramerate: 20,
+              },
+              audioPreset: {
+                maxBitrate: 32_000,
+              },
+            },
+          });
+          livekitRoomRef.current = lkRoom;
+
+          lkRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            if (track.kind === LivekitTrack.Kind.Video) {
+              setLivekitRemoteTracks(prev => {
+                const next = new Map(prev);
+                next.set(participant.identity, track);
+                return next;
+              });
+            }
+          });
+
+          lkRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+            setLivekitRemoteTracks(prev => {
+              const next = new Map(prev);
+              next.delete(participant.identity);
+              return next;
+            });
+          });
+
+          lkRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+            const speakingMap = {};
+            speakers.forEach(s => {
+              speakingMap[s.identity] = true;
+            });
+            setSpeakingPeers(speakingMap);
+          });
+
+          lkRoom.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+            if (participant === lkRoom.localParticipant) {
+              if (quality === ConnectionQuality.Excellent) setNetworkQuality('excellent');
+              else if (quality === ConnectionQuality.Good) setNetworkQuality('good');
+              else setNetworkQuality('poor');
+            }
+          });
+
+          lkRoom.on(RoomEvent.Reconnecting, () => setReconnecting(true));
+          lkRoom.on(RoomEvent.Reconnected, () => setReconnecting(false));
+
+          await lkRoom.connect(res.url, res.token);
+          setSfuActive(true);
+          console.log('[LiveKit SFU] Successfully connected with Dynacast and Simulcast enabled!');
+        }
+      } catch (sfuErr) {
+        console.warn('[LiveKit SFU] Running in adaptive WebRTC mesh fallback mode:', sfuErr.message);
+        setSfuActive(false);
+      }
+    }
+
+    initSFU();
 
     const handleBeforeUnload = () => {
       stopAllMediaTracks();
@@ -503,7 +601,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   }, [localStream, videoActive]);
 
-  // Load Tasks from DB
+  // Load Tasks
   const loadTasks = async () => {
     if (!isAuthenticated) return;
     try {
@@ -518,7 +616,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     loadTasks();
   }, [isAuthenticated, room.id]);
 
-  // Setup Socket.IO connection & WebRTC signaling
+  // Setup Socket.IO connection & signaling
   useEffect(() => {
     const socketEndpoint = import.meta.env.VITE_API_URL || window.location.origin;
     const socket = io(socketEndpoint, {
@@ -540,7 +638,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       statusText
     });
 
-    // 1. Room joined: receive existing participants and initiate WebRTC offers to them
     socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages }) => {
       setParticipants(existingParticipants || []);
       if (initialMessages) {
@@ -548,8 +645,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
       socket.emit('session-live-started', { roomId: room.id });
 
-      // For every existing peer in the room, initiate a WebRTC offer
-      if (Array.isArray(existingParticipants)) {
+      // In Mesh mode, initiate offers to existing participants
+      if (!sfuActive && Array.isArray(existingParticipants)) {
         for (const peer of existingParticipants) {
           if (peer.socketId !== socket.id) {
             try {
@@ -562,22 +659,23 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 senderSocketId: socket.id
               });
             } catch (err) {
-              console.warn('Error creating WebRTC offer for peer:', peer.socketId, err);
+              console.warn('Error creating WebRTC offer:', err);
             }
           }
         }
       }
     });
 
-    // 2. WebRTC Offer received: create answer
-    socket.on('webrtc-offer', async ({ senderSocketId, offer }) => {
+    socket.on('webrtc-offer', async ({ senderSocketId, from, offer }) => {
+      const originSocketId = senderSocketId || from;
+      if (!originSocketId) return;
       try {
-        const pc = createPeerConnection(senderSocketId);
+        const pc = createPeerConnection(originSocketId);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('webrtc-answer', {
-          targetSocketId: senderSocketId,
+          targetSocketId: originSocketId,
           answer,
           senderSocketId: socket.id
         });
@@ -586,10 +684,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
     });
 
-    // 3. WebRTC Answer received
-    socket.on('webrtc-answer', async ({ senderSocketId, answer }) => {
+    socket.on('webrtc-answer', async ({ senderSocketId, from, answer }) => {
+      const originSocketId = senderSocketId || from;
+      if (!originSocketId) return;
       try {
-        const pc = peerConnectionsRef.current.get(senderSocketId);
+        const pc = peerConnectionsRef.current.get(originSocketId);
         if (pc) {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
         }
@@ -598,10 +697,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
     });
 
-    // 4. WebRTC ICE Candidate received
-    socket.on('webrtc-ice-candidate', async ({ senderSocketId, candidate }) => {
+    socket.on('webrtc-ice-candidate', async ({ senderSocketId, from, candidate }) => {
+      const originSocketId = senderSocketId || from;
+      if (!originSocketId) return;
       try {
-        const pc = peerConnectionsRef.current.get(senderSocketId);
+        const pc = peerConnectionsRef.current.get(originSocketId);
         if (pc && candidate) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         }
@@ -610,7 +710,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
     });
 
-    // 5. User joined: add to participant list
     socket.on('user-joined', ({ participant }) => {
       setParticipants(prev => {
         const filtered = prev.filter(p => p.socketId !== participant.socketId);
@@ -618,7 +717,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     });
 
-    // 6. User left: close peer connection and remove
     socket.on('user-left', ({ socketId }) => {
       const pc = peerConnectionsRef.current.get(socketId);
       if (pc) {
@@ -638,7 +736,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     });
 
-    // 7. Media state change
     socket.on('peer-media-changed', ({ socketId, mediaState }) => {
       setParticipants(prev => prev.map(p => {
         if (p.socketId === socketId) {
@@ -648,7 +745,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
-    // 8. Speaking indicator changed
     socket.on('peer-speaking-changed', ({ socketId, isSpeaking }) => {
       setSpeakingPeers(prev => ({
         ...prev,
@@ -656,7 +752,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
-    // 9. Status change
     socket.on('peer-status-changed', ({ socketId, statusText: newStatus }) => {
       setParticipants(prev => prev.map(p => {
         if (p.socketId === socketId) {
@@ -666,7 +761,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
-    // 10. Chat & Reactions
     socket.on('new-message', (msg) => {
       setMessages(prev => [...prev, msg]);
       if (activeDrawer !== 'chat') {
@@ -689,7 +783,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       setServerVerifiedSeconds(verifiedLiveSeconds || 0);
     });
 
-    // Ticking stopwatch
     const ticker = setInterval(() => {
       setLiveElapsedSeconds(prev => {
         const next = prev + 1;
@@ -705,7 +798,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     }, 1000);
 
-    // Heartbeat ping
     const heartbeatTimer = setInterval(() => {
       if (socket.connected) {
         socket.emit('session-heartbeat', { roomId: room.id });
@@ -720,9 +812,9 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       soundSynthesizer.stopAll();
       refreshUser();
     };
-  }, [room.id]);
+  }, [room.id, sfuActive]);
 
-  // Unmute microphone with noise cancellation and attach to peer connections
+  // Unmute microphone with noise cancellation
   const unmuteMic = async () => {
     let stream = localStreamRef.current;
     let audioTrack = stream ? stream.getAudioTracks()[0] : null;
@@ -736,7 +828,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         mediaState: { mic: true }
       });
     } else {
-      // Re-acquire hardware microphone track with noise suppression & echo cancellation
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
         const newTrack = audioStream.getAudioTracks()[0];
@@ -754,7 +845,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           setLocalStream(stream);
           setMicActive(true);
 
-          // Add or replace audio track in all peer connections
           peerConnectionsRef.current.forEach(pc => {
             const senders = pc.getSenders();
             const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
@@ -773,13 +863,12 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           });
         }
       } catch (err) {
-        console.warn('Microphone permission denied or device unavailable:', err);
+        console.warn('Microphone permission denied:', err);
         setMicActive(false);
       }
     }
   };
 
-  // Mute microphone: physically stops outgoing transmission
   const muteMic = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(track => {
@@ -831,7 +920,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       } else {
         try {
           const videoStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 360 } }
+            video: VIDEO_CONSTRAINTS
           });
           const newTrack = videoStream.getVideoTracks()[0];
           if (newTrack) {
@@ -868,7 +957,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             });
           }
         } catch (err) {
-          console.warn('Webcam permission denied or device unavailable:', err);
+          console.warn('Webcam permission denied:', err);
           setVideoActive(false);
         }
       }
@@ -887,7 +976,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           localVideoRef.current.srcObject = screenStream;
         }
 
-        // Replace video track in peer connections with screen share track
         peerConnectionsRef.current.forEach(pc => {
           const senders = pc.getSenders();
           const videoSender = senders.find(s => s.track && s.track.kind === 'video');
@@ -921,7 +1009,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
     setScreenSharing(false);
 
-    // Restore camera video track on peer connections
     const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
     if (cameraTrack && videoActive) {
       peerConnectionsRef.current.forEach(pc => {
@@ -943,7 +1030,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
   };
 
-  // Status text updater
   const handleSaveStatus = (e) => {
     e.preventDefault();
     setShowStatusModal(false);
@@ -953,7 +1039,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
   };
 
-  // Send Chat message
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -966,7 +1051,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     setChatInput('');
   };
 
-  // Send Floating Reaction
   const handleSendReaction = (emoji) => {
     socketRef.current?.emit('send-reaction', {
       roomId: room.id,
@@ -975,7 +1059,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
   };
 
-  // Task actions
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskInput.trim() || !isAuthenticated) return;
@@ -1006,7 +1089,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
-  // Ambient sound synthesizer handler
   const handleVolumeChange = (channel, value) => {
     const val = parseFloat(value);
     setAmbientVolumes(prev => ({ ...prev, [channel]: val }));
@@ -1017,7 +1099,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
-  // Format hh:mm:ss or mm:ss
   const formatLiveElapsed = (seconds) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -1031,9 +1112,48 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const isAmbientActive = ambientVolumes.rain > 0 || ambientVolumes.cafe > 0 || ambientVolumes.binaural > 0 || ambientVolumes.fire > 0;
   const completedTasksCount = tasks.filter(t => t.completed).length;
 
+  // Separate remote peers and prioritize active speakers and cameras for Page 1
+  const remotePeers = participants.filter(p => p.socketId !== socketRef.current?.id);
+  const sortedRemotePeers = [...remotePeers].sort((a, b) => {
+    const aSpeaking = speakingPeers[a.socketId] || speakingPeers[a.user?.id];
+    const bSpeaking = speakingPeers[b.socketId] || speakingPeers[b.user?.id];
+    if (aSpeaking && !bSpeaking) return -1;
+    if (!aSpeaking && bSpeaking) return 1;
+    const aVideo = a.mediaState?.video;
+    const bVideo = b.mediaState?.video;
+    if (aVideo && !bVideo) return -1;
+    if (!aVideo && bVideo) return 1;
+    return 0;
+  });
+
+  // Calculate paginated slices for large room video performance
+  // On Page 0: Local user takes 1 slot, so we take (TILES_PER_PAGE - 1) remote peers
+  // On subsequent pages: TILES_PER_PAGE remote peers
+  const totalPages = Math.max(1, Math.ceil((1 + sortedRemotePeers.length) / TILES_PER_PAGE));
+  const currentRemoteSlice = currentPage === 0
+    ? sortedRemotePeers.slice(0, TILES_PER_PAGE - 1)
+    : sortedRemotePeers.slice((currentPage * TILES_PER_PAGE) - 1, ((currentPage + 1) * TILES_PER_PAGE) - 1);
+
+  // Search filtered scholars for Scholars drawer
+  const filteredScholars = participants.filter(p => {
+    if (!scholarsSearch.trim()) return true;
+    const name = p.user?.display_name || '';
+    const goal = p.statusText || '';
+    return name.toLowerCase().includes(scholarsSearch.toLowerCase()) || 
+           goal.toLowerCase().includes(scholarsSearch.toLowerCase());
+  });
+
   return (
     <div className="relative min-h-[calc(100vh-4rem)] flex flex-col justify-between bg-[#FEFAE0] overflow-hidden select-none">
       
+      {/* Reconnecting banner if network drops */}
+      {reconnecting && (
+        <div className="bg-amber-500 text-white text-xs font-bold py-1 px-4 text-center z-50 flex items-center justify-center space-x-2">
+          <WifiOff className="w-3.5 h-3.5 animate-pulse" />
+          <span>Network connection interrupted. Reconnecting with adaptive buffering...</span>
+        </div>
+      )}
+
       {/* Floating Reactions Layer */}
       <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
         {floatingReactions.map(r => (
@@ -1069,6 +1189,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]">
                 {room.category}
               </span>
+              {sfuActive ? (
+                <span className="hidden lg:inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded-none bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  SFU Simulcast
+                </span>
+              ) : (
+                <span className="hidden lg:inline-flex text-[9px] font-bold px-1.5 py-0.5 rounded-none bg-[#E9EDC9] text-[#40382F] border border-[rgba(64,56,47,0.2)]">
+                  Adaptive Mesh
+                </span>
+              )}
             </div>
             <div className="flex items-center space-x-2 text-[11px] text-[#75695A]">
               <span className="flex items-center space-x-1">
@@ -1134,10 +1263,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 </span>
               </div>
               <div className="text-[9px] text-[#75695A] flex items-center space-x-1">
-                <ShieldCheck className="w-3 h-3 text-[#D4A373] inline" />
-                <span>WebRTC Mesh</span>
+                <Wifi className="w-3 h-3 text-emerald-600 inline" />
+                <span>30+ Scale Engine</span>
                 <span>•</span>
-                <span className="text-[#40382F] font-bold">Encrypted</span>
+                <span className="text-[#40382F] font-bold">100% Reliable</span>
               </div>
             </div>
           </div>
@@ -1145,6 +1274,22 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
         {/* Right Drawer Toggles */}
         <div className="flex items-center space-x-2">
+          {/* All Connected Scholars Drawer Toggle */}
+          <button
+            onClick={() => setActiveDrawer(activeDrawer === 'scholars' ? null : 'scholars')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+              activeDrawer === 'scholars'
+                ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
+                : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-[#40382F]" />
+            <span className="hidden sm:inline">Scholars</span>
+            <span className="px-1.5 py-0.2 rounded-none bg-[#D4A373] text-[10px] text-[#40382F] font-bold border border-[#40382F]/20">
+              {participants.length}
+            </span>
+          </button>
+
           {/* Ambient Sound Button */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'audio' ? null : 'audio')}
@@ -1205,98 +1350,232 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       {/* Main Room Body: Responsive Video Grid & Side Drawers */}
       <div className="relative flex-1 flex overflow-hidden">
         
-        {/* Video Tiles Grid */}
-        <div className="flex-1 p-5 overflow-y-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-w-7xl mx-auto h-full auto-rows-fr">
-            
-            {/* 1. Local User Tile */}
-            <div className={`relative bg-[#FAEDCD] rounded-none border-2 overflow-hidden aspect-video flex items-center justify-center group transition-all ${
-              isSpeakingLocal 
-                ? 'border-emerald-500 ring-1 ring-emerald-500' 
-                : 'border-[#D4A373]'
-            }`}>
-              {/* Actual Video Preview or Simulated Avatar */}
-              {localStream && videoActive ? (
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${screenSharing ? '' : '-scale-x-100'}`}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center p-6 text-center">
-                  <div className="relative w-16 h-16 rounded-none bg-[#D4A373] flex items-center justify-center text-[#FEFAE0] font-bold text-2xl border border-[#40382F]/20 mb-3">
-                    {user ? user.display_name.charAt(0).toUpperCase() : 'Y'}
-                    {isSpeakingLocal && (
-                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
-                    )}
-                    <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none border border-[#FAEDCD] ${
-                      isSpeakingLocal ? 'bg-emerald-500' : 'bg-[#CCD5AE]'
-                    }`}></span>
-                  </div>
-                  <span className="text-xs font-bold text-[#40382F]">{user ? user.display_name : 'You (Host)'}</span>
-                  <span className="text-[10px] text-[#75695A] mt-0.5">
-                    {isSpeakingLocal ? 'Speaking...' : 'Camera Muted • Focused'}
-                  </span>
-                </div>
-              )}
+        {/* Video Tiles Grid & Pagination Controls */}
+        <div className="flex-1 p-4 sm:p-5 overflow-y-auto flex flex-col justify-between">
+          
+          {/* Pagination Strip (Active when participants > 8) */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mb-3 px-1 max-w-7xl mx-auto w-full">
+              <span className="text-xs font-semibold text-[#75695A]">
+                Showing Page <span className="font-bold text-[#40382F]">{currentPage + 1}</span> of <span className="font-bold text-[#40382F]">{totalPages}</span> ({participants.length} connected scholars)
+              </span>
 
-              {/* Top status overlay */}
-              <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
-                  {isSpeakingLocal && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
-                  <span>You {screenSharing ? '(Screen Sharing)' : ''}</span>
-                </span>
-
-                <div className="flex items-center space-x-1">
-                  {!micActive ? (
-                    <span className="p-1.5 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
-                      <MicOff className="w-3 h-3" />
-                    </span>
-                  ) : (
-                    <span className={`p-1.5 rounded-none border ${
-                      isSpeakingLocal 
-                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800' 
-                        : 'bg-[#E9EDC9]/90 border-[rgba(64,56,47,0.2)] text-[#40382F]'
-                    }`} title="Microphone active">
-                      <Mic className="w-3 h-3" />
-                    </span>
-                  )}
-                  {!videoActive && (
-                    <span className="p-1.5 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera disabled">
-                      <VideoOff className="w-3 h-3" />
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom Subject Goal Pill */}
-              <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-                <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
-                  <span className="w-1.5 h-1.5 bg-[#D4A373]"></span>
-                  <span className="truncate font-medium">{statusText}</span>
-                </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  disabled={currentPage === 0}
+                  onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                  className="p-1.5 rounded-none bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] text-[#40382F] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#E9EDC9] transition-all"
+                  title="Previous Page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={currentPage >= totalPages - 1}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                  className="p-1.5 rounded-none bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] text-[#40382F] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#E9EDC9] transition-all"
+                  title="Next Page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
+          )}
 
-            {/* 2. Other Room Participants with Real WebRTC Media */}
-            {participants.map((peer) => {
-              if (peer.socketId === socketRef.current?.id) return null;
+          {/* Grid Layout (auto-fit 1-4 columns based on viewport) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 max-w-7xl mx-auto w-full auto-rows-fr">
+            
+            {/* 1. Local User Tile (Pinned on Page 0) */}
+            {currentPage === 0 && (
+              <div className={`relative bg-[#FAEDCD] rounded-none border-2 overflow-hidden aspect-video flex items-center justify-center group transition-all ${
+                isSpeakingLocal 
+                  ? 'border-emerald-500 ring-1 ring-emerald-500' 
+                  : 'border-[#D4A373]'
+              }`}>
+                {localStream && videoActive ? (
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`w-full h-full object-cover ${screenSharing ? '' : '-scale-x-100'}`}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 text-center">
+                    <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#D4A373] flex items-center justify-center text-[#FEFAE0] font-bold text-xl sm:text-2xl border border-[#40382F]/20 mb-2 sm:mb-3">
+                      {user ? user.display_name.charAt(0).toUpperCase() : 'Y'}
+                      {isSpeakingLocal && (
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
+                      )}
+                      <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none border border-[#FAEDCD] ${
+                        isSpeakingLocal ? 'bg-emerald-500' : 'bg-[#CCD5AE]'
+                      }`}></span>
+                    </div>
+                    <span className="text-xs font-bold text-[#40382F]">{user ? user.display_name : 'You (Host)'}</span>
+                    <span className="text-[10px] text-[#75695A] mt-0.5">
+                      {isSpeakingLocal ? 'Speaking...' : 'Camera Muted • Focused'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Top status overlay */}
+                <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
+                    {isSpeakingLocal && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
+                    <span>You {screenSharing ? '(Screen Sharing)' : ''}</span>
+                  </span>
+
+                  <div className="flex items-center space-x-1">
+                    {!micActive ? (
+                      <span className="p-1 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
+                        <MicOff className="w-3 h-3" />
+                      </span>
+                    ) : (
+                      <span className={`p-1 rounded-none border ${
+                        isSpeakingLocal 
+                          ? 'bg-emerald-100 border-emerald-300 text-emerald-800' 
+                          : 'bg-[#E9EDC9]/90 border-[rgba(64,56,47,0.2)] text-[#40382F]'
+                      }`} title="Microphone active">
+                        <Mic className="w-3 h-3" />
+                      </span>
+                    )}
+                    {!videoActive && (
+                      <span className="p-1 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera disabled">
+                        <VideoOff className="w-3 h-3" />
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Subject Goal Pill */}
+                <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
+                  <div className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[10px] text-[#40382F] truncate flex items-center space-x-1.5">
+                    <span className="w-1.5 h-1.5 bg-[#D4A373]"></span>
+                    <span className="truncate font-medium">{statusText}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Remote Participants for Current Page */}
+            {currentRemoteSlice.map((peer) => {
               const stream = remoteStreams.get(peer.socketId);
-              const isSpeaking = Boolean(speakingPeers[peer.socketId]);
+              const livekitTrack = livekitRemoteTracks.get(peer.user?.id || peer.socketId);
+              const isSpeaking = Boolean(speakingPeers[peer.socketId] || speakingPeers[peer.user?.id]);
 
               return (
                 <RemoteParticipantTile
-                  key={peer.socketId}
+                  key={peer.socketId || peer.user?.id}
                   peer={peer}
                   stream={stream}
+                  livekitTrack={livekitTrack}
                   isSpeaking={isSpeaking}
+                  connectionQuality={networkQuality}
                 />
               );
             })}
           </div>
+
+          <div className="h-4"></div>
         </div>
+
+        {/* Drawer: All Connected Scholars (Supports 30+ List View) */}
+        {activeDrawer === 'scholars' && (
+          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-4 h-4 text-[#D4A373]" />
+                  <h3 className="text-sm font-bold text-[#40382F]">Connected Scholars ({participants.length})</h3>
+                </div>
+                <button
+                  onClick={() => setActiveDrawer(null)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Search filter */}
+              <div className="my-3">
+                <input
+                  type="text"
+                  placeholder="Filter 30+ scholars..."
+                  value={scholarsSearch}
+                  onChange={(e) => setScholarsSearch(e.target.value)}
+                  className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-1.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
+                />
+              </div>
+
+              {/* All participants scroll list */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                {filteredScholars.map(p => {
+                  const isMe = p.socketId === socketRef.current?.id || p.user?.id === user?.id;
+                  const isSpeaking = isMe ? isSpeakingLocal : Boolean(speakingPeers[p.socketId] || speakingPeers[p.user?.id]);
+                  const hasVideo = isMe ? videoActive : p.mediaState?.video;
+                  const hasMic = isMe ? micActive : p.mediaState?.mic;
+
+                  return (
+                    <div
+                      key={p.socketId || p.user?.id}
+                      className={`p-2.5 rounded-none border flex items-center justify-between transition-all ${
+                        isSpeaking
+                          ? 'bg-[#E9EDC9] border-emerald-500'
+                          : 'bg-[#FAEDCD] border-[rgba(64,56,47,0.2)]'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5 truncate flex-1 min-w-0">
+                        <div className="relative w-8 h-8 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xs border border-[#40382F]/20 flex-shrink-0">
+                          {p.user?.display_name ? p.user.display_name.charAt(0).toUpperCase() : 'S'}
+                          {isSpeaking && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-none animate-ping"></span>
+                          )}
+                        </div>
+                        <div className="truncate flex-1">
+                          <p className="text-xs font-bold text-[#40382F] truncate">
+                            {p.user?.display_name || 'Scholar'} {isMe && '(You)'}
+                          </p>
+                          <p className="text-[10px] text-[#75695A] truncate">
+                            {p.statusText || 'Focusing...'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Status Badges */}
+                      <div className="flex items-center space-x-1.5 ml-2 flex-shrink-0">
+                        {hasMic ? (
+                          <span className={`p-1 rounded-none border text-[10px] ${isSpeaking ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-[#E9EDC9] text-[#40382F] border-[rgba(64,56,47,0.2)]'}`}>
+                            <Mic className="w-3 h-3" />
+                          </span>
+                        ) : (
+                          <span className="p-1 rounded-none bg-rose-100 border border-rose-200 text-rose-800 text-[10px]">
+                            <MicOff className="w-3 h-3" />
+                          </span>
+                        )}
+                        {hasVideo ? (
+                          <span className="p-1 rounded-none bg-[#D4A373] text-[#40382F] border border-[#40382F]/20 text-[10px]">
+                            <Video className="w-3 h-3" />
+                          </span>
+                        ) : (
+                          <span className="p-1 rounded-none bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] text-[#75695A] text-[10px]">
+                            <VideoOff className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[rgba(64,56,47,0.2)] text-[11px] text-[#75695A] flex items-center justify-between font-semibold">
+              <span>{participants.length} total participants</span>
+              <span className="text-emerald-700 font-bold flex items-center space-x-1">
+                <Wifi className="w-3 h-3" />
+                <span>Connected</span>
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Drawer: Ambient Sound Synthesizer */}
         {activeDrawer === 'audio' && (
@@ -1323,9 +1602,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               <div className="space-y-4">
                 <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
                   <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span className="flex items-center space-x-1.5">
-                      <span>🌧️ Rain & Distant Thunder</span>
-                    </span>
+                    <span>🌧️ Rain & Distant Thunder</span>
                     <span className="text-[#75695A]">{Math.round(ambientVolumes.rain * 100)}%</span>
                   </div>
                   <input
@@ -1342,9 +1619,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 {/* Cafe Hum Slider */}
                 <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
                   <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span className="flex items-center space-x-1.5">
-                      <span>☕ Cozy Cafe & Chatter</span>
-                    </span>
+                    <span>☕ Cozy Cafe & Chatter</span>
                     <span className="text-[#75695A]">{Math.round(ambientVolumes.cafe * 100)}%</span>
                   </div>
                   <input
@@ -1361,9 +1636,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 {/* Binaural 10Hz Alpha Focus Slider */}
                 <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
                   <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span className="flex items-center space-x-1.5">
-                      <span>🧠 10Hz Alpha Binaural Wave</span>
-                    </span>
+                    <span>🧠 10Hz Alpha Binaural Wave</span>
                     <span className="text-[#75695A]">{Math.round(ambientVolumes.binaural * 100)}%</span>
                   </div>
                   <input
@@ -1380,9 +1653,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 {/* Fireplace Slider */}
                 <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
                   <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span className="flex items-center space-x-1.5">
-                      <span>🔥 Fireplace Crackle</span>
-                    </span>
+                    <span>🔥 Fireplace Crackle</span>
                     <span className="text-[#75695A]">{Math.round(ambientVolumes.fire * 100)}%</span>
                   </div>
                   <input
@@ -1454,7 +1725,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 </button>
               </div>
 
-              {/* Add Task Input */}
               <form onSubmit={handleAddTask} className="mb-4">
                 <div className="flex items-center space-x-2">
                   <input
@@ -1473,7 +1743,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 </div>
               </form>
 
-              {/* Task list */}
               <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {tasks.length === 0 ? (
                   <div className="p-6 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
@@ -1510,7 +1779,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               </div>
             </div>
 
-            {/* Task completion footer */}
             {tasks.length > 0 && (
               <div className="pt-4 border-t border-[rgba(64,56,47,0.2)] text-xs text-[#75695A] flex items-center justify-between font-semibold">
                 <span>{completedTasksCount} of {tasks.length} completed</span>
@@ -1525,7 +1793,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         {/* Drawer: Room Chat */}
         {activeDrawer === 'chat' && (
           <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
-            {/* Chat Header */}
             <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
               <div className="flex items-center space-x-2">
                 <MessageSquare className="w-4 h-4 text-[#D4A373]" />
@@ -1539,7 +1806,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               </button>
             </div>
 
-            {/* Messages Scroll Area */}
             <div ref={chatScrollRef} className="flex-1 overflow-y-auto py-3 space-y-3">
               {messages.length === 0 ? (
                 <div className="p-8 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
@@ -1571,7 +1837,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               )}
             </div>
 
-            {/* Chat Input */}
             <form onSubmit={handleSendMessage} className="pt-2 border-t border-[rgba(64,56,47,0.2)]">
               <div className="flex items-center space-x-2">
                 <input

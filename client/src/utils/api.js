@@ -88,6 +88,17 @@ export const api = {
     return handleResponse(res);
   },
 
+  async getLiveKitToken(roomId, username, userId) {
+    const params = new URLSearchParams();
+    if (roomId) params.append('roomId', roomId);
+    if (username) params.append('username', username);
+    if (userId) params.append('userId', userId);
+    const res = await fetch(`${BASE_URL}/livekit/token?${params.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
   // Sessions & Analytics
   async recordSession(sessionData) {
     const res = await fetch(`${BASE_URL}/sessions/record`, {
