@@ -5,13 +5,140 @@ import {
   Mic, MicOff, Video, VideoOff, ScreenShare, 
   MessageSquare, CheckSquare, Volume2, VolumeX, LogOut, Send, Smile, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
-  Radio, Clock, ShieldCheck, Award
+  Radio, Clock, ShieldCheck, Award, Users, Volume1, Volume
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { soundSynthesizer } from '../utils/soundSynthesizer';
 
 const REACTION_EMOJIS = ['👏', '🔥', '💯', '☕', '⚡', '📚'];
+
+const getIceServers = () => {
+  const servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+  ];
+
+  const turnUrl = import.meta.env.VITE_TURN_URL;
+  if (turnUrl) {
+    servers.push({
+      urls: turnUrl,
+      username: import.meta.env.VITE_TURN_USERNAME || '',
+      credential: import.meta.env.VITE_TURN_CREDENTIAL || '',
+    });
+  }
+
+  return { iceServers: servers };
+};
+
+const AUDIO_CONSTRAINTS = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
+/**
+ * Dedicated tile component for remote peer with direct video/audio refs
+ * and real-time speaking detection border.
+ */
+function RemoteParticipantTile({ peer, stream, isSpeaking }) {
+  const videoRef = useRef(null);
+  const audioRef = useRef(null);
+  const [streamConnected, setStreamConnected] = useState(false);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      setStreamConnected(true);
+    }
+  }, [stream, peer.mediaState?.video]);
+
+  useEffect(() => {
+    if (audioRef.current && stream) {
+      audioRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  const hasVideo = Boolean(peer.mediaState?.video && stream);
+  const isMicMuted = !peer.mediaState?.mic;
+
+  return (
+    <div className={`relative bg-[#FAEDCD] rounded-none border overflow-hidden aspect-video flex items-center justify-center transition-all ${
+      isSpeaking 
+        ? 'border-2 border-emerald-500 shadow-sm ring-1 ring-emerald-500' 
+        : 'border-[rgba(64,56,47,0.2)]'
+    }`}>
+      {/* Remote audio playback (not muted, plays peer audio with browser echo cancellation) */}
+      <audio ref={audioRef} autoPlay playsInline />
+
+      {/* Video display or Avatar placeholder */}
+      {hasVideo ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative w-16 h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-2xl border border-[#40382F]/20 mb-3">
+            {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
+            {isSpeaking && (
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
+            )}
+            <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none border border-[#FAEDCD] ${
+              isSpeaking ? 'bg-emerald-500' : 'bg-[#D4A373]'
+            }`}></span>
+          </div>
+          <span className="text-xs font-bold text-[#40382F]">{peer.user?.display_name || 'Study Peer'}</span>
+          <span className="text-[10px] text-[#75695A] mt-0.5">
+            {isSpeaking ? 'Speaking...' : 'Camera Off • Focused'}
+          </span>
+        </div>
+      )}
+
+      {/* Top Status Overlay */}
+      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+        <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
+          {isSpeaking && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
+          <span>{peer.user?.display_name || 'Study Peer'}</span>
+        </span>
+
+        <div className="flex items-center space-x-1">
+          {isMicMuted ? (
+            <span className="p-1.5 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
+              <MicOff className="w-3 h-3" />
+            </span>
+          ) : (
+            <span className={`p-1.5 rounded-none border ${
+              isSpeaking 
+                ? 'bg-emerald-100 border-emerald-300 text-emerald-800' 
+                : 'bg-[#E9EDC9]/90 border-[rgba(64,56,47,0.2)] text-[#40382F]'
+            }`} title="Microphone active">
+              <Mic className="w-3 h-3" />
+            </span>
+          )}
+          {!peer.mediaState?.video && (
+            <span className="p-1.5 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera disabled">
+              <VideoOff className="w-3 h-3" />
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Subject Goal Pill */}
+      <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
+        <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
+          <span className="w-1.5 h-1.5 bg-[#CCD5AE]"></span>
+          <span className="truncate font-medium">{peer.statusText || 'Focusing...'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function FocusRoomView({ room, onLeaveRoom }) {
   const { user, isAuthenticated, refreshUser } = useAuth();
@@ -22,14 +149,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [videoActive, setVideoActive] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [participants, setParticipants] = useState([]);
-  const [peers, setPeers] = useState(new Map()); // socketId -> RTCPeerConnection
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream
+  const [speakingPeers, setSpeakingPeers] = useState({}); // socketId -> boolean
+  const [isSpeakingLocal, setIsSpeakingLocal] = useState(false);
+  const [roomMode, setRoomMode] = useState('silent'); // 'silent' | 'discussion'
 
-  // Unlimited Live Hours Session tracking (No forced timeouts or limits)
+  // Unlimited Live Hours Session tracking
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
   const [serverVerifiedSeconds, setServerVerifiedSeconds] = useState(0);
   const [sessionStartTime] = useState(Date.now());
-  const [isLiveActive, setIsLiveActive] = useState(true);
 
   // Status & Tasks
   const [statusText, setStatusText] = useState('Deep Work Session');
@@ -55,14 +183,161 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     master: 0.7,
   });
 
+  // Refs for WebRTC & Audio Context to avoid stale closures
   const socketRef = useRef(null);
   const localVideoRef = useRef(null);
   const chatScrollRef = useRef(null);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
+  const peerConnectionsRef = useRef(new Map()); // socketId -> RTCPeerConnection
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const micActiveRef = useRef(false);
+  const spacebarPressedRef = useRef(false);
+  const wasMutedBeforePttRef = useRef(false);
+  const isSpeakingLocalRef = useRef(false);
+
+  useEffect(() => {
+    micActiveRef.current = micActive;
+  }, [micActive]);
+
+  // Voice Activity Detection (VAD) via Web Audio API AnalyserNode
+  const setupVoiceActivityDetection = (audioTrack) => {
+    try {
+      if (analyserRef.current) {
+        clearInterval(analyserRef.current);
+        analyserRef.current = null;
+      }
+      if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch (e) {}
+        audioContextRef.current = null;
+      }
+
+      if (!audioTrack) return;
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      audioContextRef.current = audioCtx;
+
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.4;
+      const mediaStream = new MediaStream([audioTrack]);
+      const source = audioCtx.createMediaStreamSource(mediaStream);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      let speakingDecay = 0;
+
+      analyserRef.current = setInterval(() => {
+        if (!analyserRef.current || !micActiveRef.current) {
+          if (isSpeakingLocalRef.current) {
+            isSpeakingLocalRef.current = false;
+            setIsSpeakingLocal(false);
+            socketRef.current?.emit('speaking-change', { roomId: room.id, isSpeaking: false });
+          }
+          return;
+        }
+
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+
+        // VAD threshold
+        if (average > 16) {
+          speakingDecay = 4; // Linger for ~400ms
+          if (!isSpeakingLocalRef.current) {
+            isSpeakingLocalRef.current = true;
+            setIsSpeakingLocal(true);
+            socketRef.current?.emit('speaking-change', { roomId: room.id, isSpeaking: true });
+          }
+        } else {
+          if (speakingDecay > 0) {
+            speakingDecay--;
+          } else if (isSpeakingLocalRef.current) {
+            isSpeakingLocalRef.current = false;
+            setIsSpeakingLocal(false);
+            socketRef.current?.emit('speaking-change', { roomId: room.id, isSpeaking: false });
+          }
+        }
+      }, 100);
+    } catch (err) {
+      console.warn('Voice Activity Detection init error:', err);
+    }
+  };
+
+  // WebRTC Peer Connection Factory
+  const createPeerConnection = (targetSocketId) => {
+    // Return existing if already established
+    if (peerConnectionsRef.current.has(targetSocketId)) {
+      return peerConnectionsRef.current.get(targetSocketId);
+    }
+
+    const pc = new RTCPeerConnection(getIceServers());
+    peerConnectionsRef.current.set(targetSocketId, pc);
+
+    // Attach local media tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        try {
+          pc.addTrack(track, localStreamRef.current);
+        } catch (e) {
+          console.warn('Error adding track to peer connection:', e);
+        }
+      });
+    }
+
+    // ICE Candidate exchange
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current) {
+        socketRef.current.emit('webrtc-ice-candidate', {
+          targetSocketId,
+          candidate: event.candidate,
+          senderSocketId: socketRef.current.id,
+        });
+      }
+    };
+
+    // Remote Track event
+    pc.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        setRemoteStreams(prev => {
+          const next = new Map(prev);
+          next.set(targetSocketId, remoteStream);
+          return next;
+        });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        setRemoteStreams(prev => {
+          const next = new Map(prev);
+          next.delete(targetSocketId);
+          return next;
+        });
+      }
+    };
+
+    return pc;
+  };
 
   // Authoritative hardware track termination
   const stopAllMediaTracks = () => {
+    if (analyserRef.current) {
+      clearInterval(analyserRef.current);
+      analyserRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch (e) {}
+      audioContextRef.current = null;
+    }
     if (localStreamRef.current) {
       try {
         localStreamRef.current.getTracks().forEach(track => {
@@ -99,11 +374,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         console.warn('Error clearing video srcObject:', err);
       }
     }
+    peerConnectionsRef.current.forEach(pc => {
+      try { pc.close(); } catch (e) {}
+    });
+    peerConnectionsRef.current.clear();
     setLocalStream(null);
     setScreenSharing(false);
   };
 
-  // Leave room handler that guarantees complete track termination & socket disconnect
+  // Leave room handler
   const handleLeaveRoom = () => {
     stopAllMediaTracks();
     soundSynthesizer.stopAll();
@@ -113,28 +392,72 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         socketRef.current.disconnect();
       } catch (e) {}
     }
-    peers.forEach(pc => {
-      try { pc.close(); } catch (e) {}
-    });
-    setPeers(new Map());
     onLeaveRoom();
   };
 
-  // Initialize Media Stream (with graceful camera fallback and cleanup)
+  // Push-to-Talk via Spacebar (active in both silent and discussion modes)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      if (e.code === 'Space' && !e.repeat && !spacebarPressedRef.current) {
+        spacebarPressedRef.current = true;
+        if (!micActiveRef.current) {
+          wasMutedBeforePttRef.current = true;
+          unmuteMic();
+        }
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      if (e.code === 'Space') {
+        spacebarPressedRef.current = false;
+        if (wasMutedBeforePttRef.current) {
+          muteMic();
+          wasMutedBeforePttRef.current = false;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Initialize Media Streams (camera on by default, microphone muted by default)
   useEffect(() => {
     let mounted = true;
 
     async function setupMedia() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 360 } },
-          audio: false, // Do not acquire microphone hardware until user clicks unmute
-        });
+        // Try requesting video + audio upfront with audio muted to prepare tracks for WebRTC mesh
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 360 } },
+            audio: AUDIO_CONSTRAINTS,
+          });
+          // Mute audio track immediately so mic is OFF by default upon entering room
+          stream.getAudioTracks().forEach(track => {
+            track.enabled = false;
+          });
+        } catch (mediaErr) {
+          // If audio or combo fails, try video only
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 360 } },
+            audio: false,
+          });
+        }
 
         if (mounted) {
           localStreamRef.current = stream;
           setLocalStream(stream);
           setVideoActive(true);
+          setMicActive(false);
+
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
           }
@@ -143,13 +466,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         }
       } catch (err) {
         console.warn('Real webcam not accessible or denied:', err.message);
-        setVideoActive(false);
+        if (mounted) {
+          setVideoActive(false);
+          setMicActive(false);
+        }
       }
     }
 
     setupMedia();
 
-    // Browser unload / tab close / navigating away safety
     const handleBeforeUnload = () => {
       stopAllMediaTracks();
       if (socketRef.current) {
@@ -178,7 +503,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   }, [localStream, videoActive]);
 
-  // Load Tasks from SQLite DB
+  // Load Tasks from DB
   const loadTasks = async () => {
     if (!isAuthenticated) return;
     try {
@@ -193,7 +518,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     loadTasks();
   }, [isAuthenticated, room.id]);
 
-  // Setup Socket.IO connection & signaling
+  // Setup Socket.IO connection & WebRTC signaling
   useEffect(() => {
     const socketEndpoint = import.meta.env.VITE_API_URL || window.location.origin;
     const socket = io(socketEndpoint, {
@@ -211,23 +536,81 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     socket.emit('join-room', {
       roomId: room.id,
       user: currentUserData,
-      mediaState: { mic: micActive, video: videoActive, screenShare: screenSharing },
+      mediaState: { mic: false, video: videoActive, screenShare: screenSharing },
       statusText
     });
 
-    socket.on('room-joined', ({ participants: existingParticipants, messages: initialMessages }) => {
+    // 1. Room joined: receive existing participants and initiate WebRTC offers to them
+    socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages }) => {
       setParticipants(existingParticipants || []);
       if (initialMessages) {
         setMessages(initialMessages);
       }
-      // Start verified live session tracking
       socket.emit('session-live-started', { roomId: room.id });
+
+      // For every existing peer in the room, initiate a WebRTC offer
+      if (Array.isArray(existingParticipants)) {
+        for (const peer of existingParticipants) {
+          if (peer.socketId !== socket.id) {
+            try {
+              const pc = createPeerConnection(peer.socketId);
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              socket.emit('webrtc-offer', {
+                targetSocketId: peer.socketId,
+                offer,
+                senderSocketId: socket.id
+              });
+            } catch (err) {
+              console.warn('Error creating WebRTC offer for peer:', peer.socketId, err);
+            }
+          }
+        }
+      }
     });
 
-    socket.on('heartbeat-ack', ({ verifiedLiveSeconds, totalUserLiveSeconds }) => {
-      setServerVerifiedSeconds(verifiedLiveSeconds || 0);
+    // 2. WebRTC Offer received: create answer
+    socket.on('webrtc-offer', async ({ senderSocketId, offer }) => {
+      try {
+        const pc = createPeerConnection(senderSocketId);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc-answer', {
+          targetSocketId: senderSocketId,
+          answer,
+          senderSocketId: socket.id
+        });
+      } catch (err) {
+        console.warn('Error handling WebRTC offer:', err);
+      }
     });
 
+    // 3. WebRTC Answer received
+    socket.on('webrtc-answer', async ({ senderSocketId, answer }) => {
+      try {
+        const pc = peerConnectionsRef.current.get(senderSocketId);
+        if (pc) {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+      } catch (err) {
+        console.warn('Error setting remote description from answer:', err);
+      }
+    });
+
+    // 4. WebRTC ICE Candidate received
+    socket.on('webrtc-ice-candidate', async ({ senderSocketId, candidate }) => {
+      try {
+        const pc = peerConnectionsRef.current.get(senderSocketId);
+        if (pc && candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+      } catch (err) {
+        console.warn('Error adding ICE candidate:', err);
+      }
+    });
+
+    // 5. User joined: add to participant list
     socket.on('user-joined', ({ participant }) => {
       setParticipants(prev => {
         const filtered = prev.filter(p => p.socketId !== participant.socketId);
@@ -235,15 +618,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     });
 
+    // 6. User left: close peer connection and remove
     socket.on('user-left', ({ socketId }) => {
-      setParticipants(prev => prev.filter(p => p.socketId !== socketId));
+      const pc = peerConnectionsRef.current.get(socketId);
+      if (pc) {
+        try { pc.close(); } catch (e) {}
+        peerConnectionsRef.current.delete(socketId);
+      }
       setRemoteStreams(prev => {
         const next = new Map(prev);
         next.delete(socketId);
         return next;
       });
+      setParticipants(prev => prev.filter(p => p.socketId !== socketId));
+      setSpeakingPeers(prev => {
+        const next = { ...prev };
+        delete next[socketId];
+        return next;
+      });
     });
 
+    // 7. Media state change
     socket.on('peer-media-changed', ({ socketId, mediaState }) => {
       setParticipants(prev => prev.map(p => {
         if (p.socketId === socketId) {
@@ -253,6 +648,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
+    // 8. Speaking indicator changed
+    socket.on('peer-speaking-changed', ({ socketId, isSpeaking }) => {
+      setSpeakingPeers(prev => ({
+        ...prev,
+        [socketId]: isSpeaking
+      }));
+    });
+
+    // 9. Status change
     socket.on('peer-status-changed', ({ socketId, statusText: newStatus }) => {
       setParticipants(prev => prev.map(p => {
         if (p.socketId === socketId) {
@@ -262,7 +666,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
-    // Chat Events
+    // 10. Chat & Reactions
     socket.on('new-message', (msg) => {
       setMessages(prev => [...prev, msg]);
       if (activeDrawer !== 'chat') {
@@ -270,7 +674,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }
     });
 
-    // Live Floating Reaction
     socket.on('reaction-received', (reaction) => {
       const rx = {
         ...reaction,
@@ -282,11 +685,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }, 2500);
     });
 
-    // Ticking stopwatch for live stream
+    socket.on('heartbeat-ack', ({ verifiedLiveSeconds }) => {
+      setServerVerifiedSeconds(verifiedLiveSeconds || 0);
+    });
+
+    // Ticking stopwatch
     const ticker = setInterval(() => {
       setLiveElapsedSeconds(prev => {
         const next = prev + 1;
-        // Celebrate milestones every 30 minutes of deep study
         if (next > 0 && next % 1800 === 0) {
           soundSynthesizer.playChime();
           confetti({
@@ -299,7 +705,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     }, 1000);
 
-    // Heartbeat ping every 25 seconds for authoritative server verification
+    // Heartbeat ping
     const heartbeatTimer = setInterval(() => {
       if (socket.connected) {
         socket.emit('session-heartbeat', { roomId: room.id });
@@ -316,38 +722,51 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
   }, [room.id]);
 
-  // Local Media Controls (Complete Hardware Release on Stop)
-  const toggleMic = async () => {
-    if (micActive) {
-      // Physically stop audio capture hardware so OS indicator turns completely OFF
-      if (localStreamRef.current) {
-        localStreamRef.current.getAudioTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-          localStreamRef.current.removeTrack(track);
-        });
-      }
-      setMicActive(false);
+  // Unmute microphone with noise cancellation and attach to peer connections
+  const unmuteMic = async () => {
+    let stream = localStreamRef.current;
+    let audioTrack = stream ? stream.getAudioTracks()[0] : null;
+
+    if (audioTrack && audioTrack.readyState === 'live') {
+      audioTrack.enabled = true;
+      setMicActive(true);
+      setupVoiceActivityDetection(audioTrack);
       socketRef.current?.emit('update-media-state', {
         roomId: room.id,
-        mediaState: { mic: false }
+        mediaState: { mic: true }
       });
     } else {
-      // Re-acquire hardware microphone track
+      // Re-acquire hardware microphone track with noise suppression & echo cancellation
       try {
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
         const newTrack = audioStream.getAudioTracks()[0];
         if (newTrack) {
-          let stream = localStreamRef.current;
           if (!stream) {
             stream = new MediaStream();
             localStreamRef.current = stream;
           }
-          // Remove old stopped audio tracks
-          stream.getAudioTracks().forEach(t => stream.removeTrack(t));
+          stream.getAudioTracks().forEach(t => {
+            t.stop();
+            stream.removeTrack(t);
+          });
           stream.addTrack(newTrack);
+          newTrack.enabled = true;
           setLocalStream(stream);
           setMicActive(true);
+
+          // Add or replace audio track in all peer connections
+          peerConnectionsRef.current.forEach(pc => {
+            const senders = pc.getSenders();
+            const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+            if (audioSender) {
+              audioSender.replaceTrack(newTrack);
+            } else {
+              try { pc.addTrack(newTrack, stream); } catch (e) {}
+            }
+          });
+
+          setupVoiceActivityDetection(newTrack);
+
           socketRef.current?.emit('update-media-state', {
             roomId: room.id,
             mediaState: { mic: true }
@@ -360,18 +779,38 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
+  // Mute microphone: physically stops outgoing transmission
+  const muteMic = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
+    }
+    setMicActive(false);
+    setIsSpeakingLocal(false);
+    isSpeakingLocalRef.current = false;
+    socketRef.current?.emit('speaking-change', { roomId: room.id, isSpeaking: false });
+    socketRef.current?.emit('update-media-state', {
+      roomId: room.id,
+      mediaState: { mic: false }
+    });
+  };
+
+  const toggleMic = () => {
+    if (micActive) {
+      muteMic();
+    } else {
+      unmuteMic();
+    }
+  };
+
   const toggleVideo = async () => {
+    let stream = localStreamRef.current;
+    let videoTrack = stream ? stream.getVideoTracks()[0] : null;
+
     if (videoActive) {
-      // Physically stop webcam capture hardware so OS indicator and camera LED turn completely OFF
-      if (localStreamRef.current) {
-        localStreamRef.current.getVideoTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-          localStreamRef.current.removeTrack(track);
-        });
-      }
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
+      if (videoTrack) {
+        videoTrack.enabled = false;
       }
       setVideoActive(false);
       socketRef.current?.emit('update-media-state', {
@@ -379,34 +818,59 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         mediaState: { video: false }
       });
     } else {
-      // Re-acquire hardware webcam track
-      try {
-        const videoStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 360 } }
-        });
-        const newTrack = videoStream.getVideoTracks()[0];
-        if (newTrack) {
-          let stream = localStreamRef.current;
-          if (!stream) {
-            stream = new MediaStream();
-            localStreamRef.current = stream;
-          }
-          // Remove old stopped video tracks
-          stream.getVideoTracks().forEach(t => stream.removeTrack(t));
-          stream.addTrack(newTrack);
-          setLocalStream(stream);
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-          }
-          setVideoActive(true);
-          socketRef.current?.emit('update-media-state', {
-            roomId: room.id,
-            mediaState: { video: true }
-          });
+      if (videoTrack && videoTrack.readyState === 'live') {
+        videoTrack.enabled = true;
+        setVideoActive(true);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
         }
-      } catch (err) {
-        console.warn('Webcam permission denied or device unavailable:', err);
-        setVideoActive(false);
+        socketRef.current?.emit('update-media-state', {
+          roomId: room.id,
+          mediaState: { video: true }
+        });
+      } else {
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 360 } }
+          });
+          const newTrack = videoStream.getVideoTracks()[0];
+          if (newTrack) {
+            if (!stream) {
+              stream = new MediaStream();
+              localStreamRef.current = stream;
+            }
+            stream.getVideoTracks().forEach(t => {
+              t.stop();
+              stream.removeTrack(t);
+            });
+            stream.addTrack(newTrack);
+            newTrack.enabled = true;
+            setLocalStream(stream);
+            setVideoActive(true);
+
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = stream;
+            }
+
+            peerConnectionsRef.current.forEach(pc => {
+              const senders = pc.getSenders();
+              const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+              if (videoSender) {
+                videoSender.replaceTrack(newTrack);
+              } else {
+                try { pc.addTrack(newTrack, stream); } catch (e) {}
+              }
+            });
+
+            socketRef.current?.emit('update-media-state', {
+              roomId: room.id,
+              mediaState: { video: true }
+            });
+          }
+        } catch (err) {
+          console.warn('Webcam permission denied or device unavailable:', err);
+          setVideoActive(false);
+        }
       }
     }
   };
@@ -417,23 +881,23 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         screenStreamRef.current = screenStream;
         setScreenSharing(true);
+        const screenTrack = screenStream.getVideoTracks()[0];
+
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = screenStream;
         }
 
-        screenStream.getVideoTracks()[0].onended = () => {
-          try {
-            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-          } catch (e) {}
-          screenStreamRef.current = null;
-          setScreenSharing(false);
-          if (localVideoRef.current && localStreamRef.current) {
-            localVideoRef.current.srcObject = localStreamRef.current;
+        // Replace video track in peer connections with screen share track
+        peerConnectionsRef.current.forEach(pc => {
+          const senders = pc.getSenders();
+          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(screenTrack);
           }
-          socketRef.current?.emit('update-media-state', {
-            roomId: room.id,
-            mediaState: { screenShare: false }
-          });
+        });
+
+        screenTrack.onended = () => {
+          stopScreenSharing();
         };
 
         socketRef.current?.emit('update-media-state', {
@@ -444,21 +908,39 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         console.warn('Screen share cancelled:', e);
       }
     } else {
-      if (screenStreamRef.current) {
-        try {
-          screenStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-        } catch (e) {}
-        screenStreamRef.current = null;
-      }
-      setScreenSharing(false);
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-      socketRef.current?.emit('update-media-state', {
-        roomId: room.id,
-        mediaState: { screenShare: false }
+      stopScreenSharing();
+    }
+  };
+
+  const stopScreenSharing = () => {
+    if (screenStreamRef.current) {
+      try {
+        screenStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+      } catch (e) {}
+      screenStreamRef.current = null;
+    }
+    setScreenSharing(false);
+
+    // Restore camera video track on peer connections
+    const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (cameraTrack && videoActive) {
+      peerConnectionsRef.current.forEach(pc => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(cameraTrack);
+        }
       });
     }
+
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+
+    socketRef.current?.emit('update-media-state', {
+      roomId: room.id,
+      mediaState: { screenShare: false }
+    });
   };
 
   // Status text updater
@@ -605,27 +1087,58 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           </div>
         </div>
 
-        {/* Center: Authoritative Unlimited Live Hours Stopwatch */}
-        <div className="flex items-center space-x-3 bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] px-4 py-1.5 rounded-none">
-          <div className="relative flex items-center justify-center">
-            <span className="w-2.5 h-2.5 bg-[#D4A373] animate-ping absolute"></span>
-            <span className="w-2.5 h-2.5 bg-[#D4A373]"></span>
+        {/* Center: Live Stopwatch & Room Audio Mode Selector */}
+        <div className="flex items-center space-x-2 sm:space-x-4">
+          {/* Room Audio Mode Pill */}
+          <div className="hidden md:flex items-center bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] p-0.5 rounded-none text-[11px]">
+            <button
+              onClick={() => setRoomMode('silent')}
+              className={`px-2.5 py-1 rounded-none font-semibold transition-all flex items-center space-x-1 ${
+                roomMode === 'silent'
+                  ? 'bg-[#CCD5AE] text-[#40382F] font-bold shadow-none'
+                  : 'text-[#75695A] hover:text-[#40382F]'
+              }`}
+              title="Silent Study Mode: Mute by default for quiet focus"
+            >
+              <VolumeX className="w-3 h-3" />
+              <span>Silent Study</span>
+            </button>
+            <button
+              onClick={() => setRoomMode('discussion')}
+              className={`px-2.5 py-1 rounded-none font-semibold transition-all flex items-center space-x-1 ${
+                roomMode === 'discussion'
+                  ? 'bg-[#D4A373] text-[#40382F] font-bold shadow-none'
+                  : 'text-[#75695A] hover:text-[#40382F]'
+              }`}
+              title="Discussion Mode: Open voice chat for active collaboration"
+            >
+              <Volume2 className="w-3 h-3" />
+              <span>Discussion</span>
+            </button>
           </div>
 
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-mono text-sm sm:text-base font-bold text-[#40382F] tracking-wider">
-                {formatLiveElapsed(liveElapsedSeconds)}
-              </span>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)] uppercase tracking-wider">
-                LIVE
-              </span>
+          {/* Stopwatch */}
+          <div className="flex items-center space-x-3 bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] px-3 sm:px-4 py-1.5 rounded-none">
+            <div className="relative flex items-center justify-center">
+              <span className="w-2.5 h-2.5 bg-[#D4A373] animate-ping absolute"></span>
+              <span className="w-2.5 h-2.5 bg-[#D4A373]"></span>
             </div>
-            <div className="text-[9px] text-[#75695A] flex items-center space-x-1">
-              <ShieldCheck className="w-3 h-3 text-[#D4A373] inline" />
-              <span>Unlimited Session</span>
-              <span>•</span>
-              <span className="text-[#40382F] font-bold">Ranking Active</span>
+
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-mono text-sm sm:text-base font-bold text-[#40382F] tracking-wider">
+                  {formatLiveElapsed(liveElapsedSeconds)}
+                </span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)] uppercase tracking-wider">
+                  LIVE
+                </span>
+              </div>
+              <div className="text-[9px] text-[#75695A] flex items-center space-x-1">
+                <ShieldCheck className="w-3 h-3 text-[#D4A373] inline" />
+                <span>WebRTC Mesh</span>
+                <span>•</span>
+                <span className="text-[#40382F] font-bold">Encrypted</span>
+              </div>
             </div>
           </div>
         </div>
@@ -642,7 +1155,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             }`}
           >
             <Volume2 className="w-3.5 h-3.5 text-[#40382F]" />
-            <span className="hidden sm:inline">Sound Ambience</span>
+            <span className="hidden sm:inline">Ambience</span>
             {isAmbientActive && (
               <span className="w-2 h-2 bg-[#D4A373] animate-ping"></span>
             )}
@@ -697,7 +1210,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-w-7xl mx-auto h-full auto-rows-fr">
             
             {/* 1. Local User Tile */}
-            <div className="relative bg-[#FAEDCD] rounded-none border-2 border-[#D4A373] overflow-hidden aspect-video flex items-center justify-center group">
+            <div className={`relative bg-[#FAEDCD] rounded-none border-2 overflow-hidden aspect-video flex items-center justify-center group transition-all ${
+              isSpeakingLocal 
+                ? 'border-emerald-500 ring-1 ring-emerald-500' 
+                : 'border-[#D4A373]'
+            }`}>
               {/* Actual Video Preview or Simulated Avatar */}
               {localStream && videoActive ? (
                 <video
@@ -711,27 +1228,43 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 <div className="flex flex-col items-center justify-center p-6 text-center">
                   <div className="relative w-16 h-16 rounded-none bg-[#D4A373] flex items-center justify-center text-[#FEFAE0] font-bold text-2xl border border-[#40382F]/20 mb-3">
                     {user ? user.display_name.charAt(0).toUpperCase() : 'Y'}
-                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none bg-[#CCD5AE] border border-[#FAEDCD]"></span>
+                    {isSpeakingLocal && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
+                    )}
+                    <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none border border-[#FAEDCD] ${
+                      isSpeakingLocal ? 'bg-emerald-500' : 'bg-[#CCD5AE]'
+                    }`}></span>
                   </div>
                   <span className="text-xs font-bold text-[#40382F]">{user ? user.display_name : 'You (Host)'}</span>
-                  <span className="text-[10px] text-[#75695A] mt-0.5">Camera Muted • Focused</span>
+                  <span className="text-[10px] text-[#75695A] mt-0.5">
+                    {isSpeakingLocal ? 'Speaking...' : 'Camera Muted • Focused'}
+                  </span>
                 </div>
               )}
 
               {/* Top status overlay */}
               <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0] text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)]">
-                  You {screenSharing ? '(Screen Sharing)' : ''}
+                <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
+                  {isSpeakingLocal && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
+                  <span>You {screenSharing ? '(Screen Sharing)' : ''}</span>
                 </span>
 
                 <div className="flex items-center space-x-1">
-                  {!micActive && (
-                    <span className="p-1.5 rounded-none bg-rose-100 border border-rose-200 text-rose-800">
+                  {!micActive ? (
+                    <span className="p-1.5 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
                       <MicOff className="w-3 h-3" />
+                    </span>
+                  ) : (
+                    <span className={`p-1.5 rounded-none border ${
+                      isSpeakingLocal 
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800' 
+                        : 'bg-[#E9EDC9]/90 border-[rgba(64,56,47,0.2)] text-[#40382F]'
+                    }`} title="Microphone active">
+                      <Mic className="w-3 h-3" />
                     </span>
                   )}
                   {!videoActive && (
-                    <span className="p-1.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#75695A]">
+                    <span className="p-1.5 rounded-none bg-[#E9EDC9]/90 border border-[rgba(64,56,47,0.2)] text-[#75695A]" title="Camera disabled">
                       <VideoOff className="w-3 h-3" />
                     </span>
                   )}
@@ -740,57 +1273,26 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
               {/* Bottom Subject Goal Pill */}
               <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-                <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
+                <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0]/90 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
                   <span className="w-1.5 h-1.5 bg-[#D4A373]"></span>
                   <span className="truncate font-medium">{statusText}</span>
                 </div>
               </div>
             </div>
 
-            {/* 2. Other Room Participants */}
+            {/* 2. Other Room Participants with Real WebRTC Media */}
             {participants.map((peer) => {
               if (peer.socketId === socketRef.current?.id) return null;
-              const isPeerVideo = peer.mediaState?.video;
-              const isPeerMic = peer.mediaState?.mic;
+              const stream = remoteStreams.get(peer.socketId);
+              const isSpeaking = Boolean(speakingPeers[peer.socketId]);
 
               return (
-                <div
+                <RemoteParticipantTile
                   key={peer.socketId}
-                  className="relative bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] overflow-hidden aspect-video flex items-center justify-center group"
-                >
-                  {/* Avatar Tile */}
-                  <div className="flex flex-col items-center justify-center p-6 text-center">
-                    <div className="relative w-16 h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-2xl border border-[#40382F]/20 mb-3">
-                      {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
-                      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-none bg-[#D4A373] border border-[#FAEDCD]"></span>
-                    </div>
-                    <span className="text-xs font-bold text-[#40382F]">{peer.user?.display_name || 'Study Peer'}</span>
-                    <span className="text-[10px] text-[#75695A] mt-0.5">● Deep Focus Grind</span>
-                  </div>
-
-                  {/* Top status overlay */}
-                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                    <span className="px-2.5 py-1 rounded-none bg-[#FEFAE0] text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)]">
-                      {peer.user?.display_name || 'Peer'}
-                    </span>
-
-                    <div className="flex items-center space-x-1">
-                      {!isPeerMic && (
-                        <span className="p-1.5 rounded-none bg-rose-100 border border-rose-200 text-rose-800">
-                          <MicOff className="w-3 h-3" />
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Bottom Subject Goal Pill */}
-                  <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-                    <div className="px-2.5 py-1 rounded-none bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] text-[11px] text-[#40382F] truncate flex items-center space-x-1.5">
-                      <span className="w-1.5 h-1.5 bg-[#CCD5AE]"></span>
-                      <span className="truncate font-medium">{peer.statusText || 'Focusing...'}</span>
-                    </div>
-                  </div>
-                </div>
+                  peer={peer}
+                  stream={stream}
+                  isSpeaking={isSpeaking}
+                />
               );
             })}
           </div>
@@ -1109,46 +1611,61 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           ))}
         </div>
 
-        {/* Center: Essential AV Controls */}
+        {/* Center: Essential AV Controls & Push-to-Talk Indicator */}
         <div className="flex items-center space-x-2 sm:space-x-3">
           {/* Mic */}
-          <button
-            onClick={toggleMic}
-            className={`p-3 rounded-none flex items-center justify-center transition-all border ${
-              micActive
-                ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20'
-                : 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
-            }`}
-            title={micActive ? 'Mute Microphone' : 'Unmute Microphone'}
-          >
-            {micActive ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-          </button>
+          <div className="relative flex flex-col items-center">
+            <button
+              onClick={toggleMic}
+              className={`p-3 rounded-none flex items-center justify-center transition-all border ${
+                micActive
+                  ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20 shadow-none'
+                  : 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+              }`}
+              title={micActive ? 'Mute Microphone' : 'Unmute Microphone (or hold Spacebar to talk)'}
+            >
+              {micActive ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+            </button>
+            <span className="text-[9px] text-[#75695A] font-semibold mt-1 hidden sm:block">
+              {micActive ? 'Mic Active' : 'Space: Talk'}
+            </span>
+          </div>
 
           {/* Camera */}
-          <button
-            onClick={toggleVideo}
-            className={`p-3 rounded-none flex items-center justify-center transition-all border ${
-              videoActive
-                ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20'
-                : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
-            }`}
-            title={videoActive ? 'Turn Video Off' : 'Turn Video On'}
-          >
-            {videoActive ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-          </button>
+          <div className="relative flex flex-col items-center">
+            <button
+              onClick={toggleVideo}
+              className={`p-3 rounded-none flex items-center justify-center transition-all border ${
+                videoActive
+                  ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20'
+                  : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
+              }`}
+              title={videoActive ? 'Turn Video Off' : 'Turn Video On'}
+            >
+              {videoActive ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+            </button>
+            <span className="text-[9px] text-[#75695A] font-semibold mt-1 hidden sm:block">
+              {videoActive ? 'Camera On' : 'Camera Off'}
+            </span>
+          </div>
 
           {/* Screen Share */}
-          <button
-            onClick={toggleScreenShare}
-            className={`p-3 rounded-none flex items-center justify-center transition-all border ${
-              screenSharing
-                ? 'bg-[#CCD5AE] text-[#40382F] border-[rgba(64,56,47,0.2)]'
-                : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
-            }`}
-            title={screenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
-          >
-            <ScreenShare className="w-5 h-5" />
-          </button>
+          <div className="relative flex flex-col items-center">
+            <button
+              onClick={toggleScreenShare}
+              className={`p-3 rounded-none flex items-center justify-center transition-all border ${
+                screenSharing
+                  ? 'bg-[#CCD5AE] text-[#40382F] border-[rgba(64,56,47,0.2)]'
+                  : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
+              }`}
+              title={screenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
+            >
+              <ScreenShare className="w-5 h-5" />
+            </button>
+            <span className="text-[9px] text-[#75695A] font-semibold mt-1 hidden sm:block">
+              {screenSharing ? 'Sharing' : 'Screen'}
+            </span>
+          </div>
         </div>
 
         {/* Right: Leave Room */}

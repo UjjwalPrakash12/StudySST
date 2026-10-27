@@ -4,6 +4,7 @@ import {
   Palette, Play, Shield, Timer, Flame, CheckCircle2, Radio 
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { usePresence } from '../context/PresenceContext';
 
 const CATEGORY_MAP = {
   'All Rooms': null,
@@ -15,6 +16,7 @@ const CATEGORY_MAP = {
 };
 
 export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, isAuthenticated }) {
+  const { totalActive, authenticatedCount, anonymousCount, roomCounts } = usePresence();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -44,7 +46,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
     return matchesSearch && matchesCat;
   });
 
-  const totalOnline = rooms.reduce((acc, r) => acc + (r.onlineCount || 0), 0);
+  const totalOnline = totalActive;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -194,7 +196,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
                     </span>
                     <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-[11px] font-semibold">
                       <span className="w-1.5 h-1.5 bg-[#D4A373] animate-pulse"></span>
-                      <span>{room.onlineCount || 0} online</span>
+                      <span>{(roomCounts && roomCounts[room.id] !== undefined ? roomCounts[room.id] : (room.onlineCount || 0))} online</span>
                     </div>
                   </div>
 

@@ -205,6 +205,57 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const activeRooms = new Map();
 const activeLiveSessions = new Map(); // socketId -> { sessionId, userId, roomId, startedAt, lastHeartbeat }
 
+// ==========================================
+// Global Visitor Presence State (De-duplicated by visitorId)
+// ==========================================
+const activeVisitors = new Map(); // visitorId -> { visitorId, socketIds: Set, user, isAuthenticated, view, roomId, lastSeen }
+const socketToVisitor = new Map(); // socketId -> visitorId
+
+function getPresenceStats() {
+  let authenticatedCount = 0;
+  let anonymousCount = 0;
+  const roomCounts = {};
+
+  try {
+    const dbRooms = db.prepare('SELECT id FROM rooms').all();
+    for (const r of dbRooms) {
+      roomCounts[r.id] = 0;
+    }
+  } catch (e) {}
+
+  for (const visitor of activeVisitors.values()) {
+    if (visitor.isAuthenticated) {
+      authenticatedCount++;
+    } else {
+      anonymousCount++;
+    }
+    if (visitor.roomId) {
+      roomCounts[visitor.roomId] = (roomCounts[visitor.roomId] || 0) + 1;
+    }
+  }
+
+  // Also include any active socket participants in rooms
+  for (const [rId, rState] of activeRooms.entries()) {
+    if (rState && rState.participants) {
+      roomCounts[rId] = Math.max(roomCounts[rId] || 0, rState.participants.size);
+    }
+  }
+
+  return {
+    totalActive: activeVisitors.size,
+    authenticatedCount,
+    anonymousCount,
+    roomCounts,
+    timestamp: Date.now()
+  };
+}
+
+function broadcastPresenceStats() {
+  if (typeof io !== 'undefined' && io) {
+    io.emit('presence-stats', getPresenceStats());
+  }
+}
+
 function getOrCreateRoomState(roomId) {
   if (!activeRooms.has(roomId)) {
     activeRooms.set(roomId, {
@@ -793,6 +844,13 @@ app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, re
 });
 
 // ==========================================
+// API Routes: Presence & Active Users
+// ==========================================
+app.get('/api/presence/stats', (req, res) => {
+  res.json(getPresenceStats());
+});
+
+// ==========================================
 // API Routes: Study Rooms
 // ==========================================
 function getAccurateRoomOnlineCount(roomId) {
@@ -1095,6 +1153,50 @@ io.on('connection', (socket) => {
   let currentRoomId = null;
   let currentUser = null;
 
+  // Immediately send initial presence stats to newly connected socket
+  socket.emit('presence-stats', getPresenceStats());
+
+  // Visitor Presence Registration (Works for unauthenticated visitors & authenticated users)
+  socket.on('presence-register', ({ visitorId, user, isAuthenticated, view, roomId }) => {
+    if (!visitorId) return;
+    socketToVisitor.set(socket.id, visitorId);
+
+    let visitor = activeVisitors.get(visitorId);
+    if (!visitor) {
+      visitor = {
+        visitorId,
+        socketIds: new Set(),
+        user: user || null,
+        isAuthenticated: Boolean(isAuthenticated),
+        view: view || 'lobby',
+        roomId: roomId || null,
+        lastSeen: Date.now()
+      };
+      activeVisitors.set(visitorId, visitor);
+    } else {
+      if (user) visitor.user = user;
+      visitor.isAuthenticated = Boolean(isAuthenticated);
+      if (view !== undefined) visitor.view = view;
+      if (roomId !== undefined) visitor.roomId = roomId;
+      visitor.lastSeen = Date.now();
+    }
+    visitor.socketIds.add(socket.id);
+    broadcastPresenceStats();
+  });
+
+  socket.on('presence-update', ({ view, roomId, user, isAuthenticated }) => {
+    const visitorId = socketToVisitor.get(socket.id);
+    if (visitorId && activeVisitors.has(visitorId)) {
+      const visitor = activeVisitors.get(visitorId);
+      if (view !== undefined) visitor.view = view;
+      if (roomId !== undefined) visitor.roomId = roomId;
+      if (user !== undefined) visitor.user = user;
+      if (isAuthenticated !== undefined) visitor.isAuthenticated = Boolean(isAuthenticated);
+      visitor.lastSeen = Date.now();
+      broadcastPresenceStats();
+    }
+  });
+
   // 1. Join Room & Start Authoritative Live Time Tracking
   socket.on('join-room', ({ roomId, user, mediaState, statusText }) => {
     // If client was already in another room, clean up previous room first
@@ -1107,6 +1209,15 @@ io.on('connection', (socket) => {
       display_name: 'Guest ' + socket.id.slice(0, 4),
       avatar_seed: socket.id
     };
+
+    // Update presence record with current roomId
+    const vId = socketToVisitor.get(socket.id);
+    if (vId && activeVisitors.has(vId)) {
+      const v = activeVisitors.get(vId);
+      v.roomId = roomId;
+      v.view = 'room';
+      broadcastPresenceStats();
+    }
 
     socket.join(roomId);
     const roomState = getOrCreateRoomState(roomId);
@@ -1229,7 +1340,37 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 3. WebRTC Signaling Relay
+  // 3. WebRTC Mesh Signaling Relay
+  socket.on('webrtc-offer', ({ to, offer, senderInfo }) => {
+    io.to(to).emit('webrtc-offer', {
+      from: socket.id,
+      offer,
+      senderInfo: senderInfo || currentUser
+    });
+  });
+
+  socket.on('webrtc-answer', ({ to, answer }) => {
+    io.to(to).emit('webrtc-answer', {
+      from: socket.id,
+      answer
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', ({ to, candidate }) => {
+    io.to(to).emit('webrtc-ice-candidate', {
+      from: socket.id,
+      candidate
+    });
+  });
+
+  socket.on('speaking-change', ({ roomId, isSpeaking }) => {
+    socket.to(roomId).emit('peer-speaking-changed', {
+      socketId: socket.id,
+      isSpeaking
+    });
+  });
+
+  // Legacy signal relay for backwards-compatibility
   socket.on('signal-send', ({ to, signal, callerName, callerAvatar, mediaState }) => {
     io.to(to).emit('signal-receive', {
       from: socket.id,
@@ -1306,6 +1447,18 @@ io.on('connection', (socket) => {
     if (currentRoomId) {
       handleLeave(socket, currentRoomId);
     }
+    const visitorId = socketToVisitor.get(socket.id);
+    if (visitorId) {
+      socketToVisitor.delete(socket.id);
+      const visitor = activeVisitors.get(visitorId);
+      if (visitor) {
+        visitor.socketIds.delete(socket.id);
+        if (visitor.socketIds.size === 0) {
+          activeVisitors.delete(visitorId);
+        }
+      }
+      broadcastPresenceStats();
+    }
   });
 
   function handleLeave(s, roomId) {
@@ -1321,6 +1474,17 @@ io.on('connection', (socket) => {
         user: currentUser
       });
     }
+
+    // Update presence record on leaving room
+    const vId = socketToVisitor.get(s.id);
+    if (vId && activeVisitors.has(vId)) {
+      const v = activeVisitors.get(vId);
+      if (v.roomId === roomId) {
+        v.roomId = null;
+        v.view = 'lobby';
+      }
+    }
+    broadcastPresenceStats();
 
     // Authoritative Live Session End
     if (activeLiveSessions.has(s.id)) {

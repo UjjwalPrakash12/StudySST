@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { PresenceProvider, usePresence } from './context/PresenceContext';
 import Navbar from './components/Navbar';
 import LobbyView from './components/LobbyView';
 import FocusRoomView from './components/FocusRoomView';
@@ -12,10 +13,15 @@ import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
 function AppContent() {
   const { isAuthenticated } = useAuth();
+  const { updatePresenceView } = usePresence();
   const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'blogs' | 'analytics' | 'leaderboard'
   const [activeRoom, setActiveRoom] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+
+  useEffect(() => {
+    updatePresenceView(currentView, activeRoom ? activeRoom.id : null);
+  }, [currentView, activeRoom]);
 
   const handleJoinRoom = (room) => {
     setActiveRoom(room);
@@ -128,7 +134,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <PresenceProvider>
+        <AppContent />
+      </PresenceProvider>
     </AuthProvider>
   );
 }

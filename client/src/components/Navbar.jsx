@@ -1,11 +1,13 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon } from 'lucide-react';
+import { usePresence } from '../context/PresenceContext';
+import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon, Radio } from 'lucide-react';
 
 export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
   const { user, logout, isAuthenticated } = useAuth();
   const { theme, toggleTheme, isDark } = useTheme();
+  const { totalActive, authenticatedCount, anonymousCount } = usePresence();
 
   const totalLiveHours = user ? ((user.total_live_seconds || (user.total_focus_minutes * 60)) / 3600).toFixed(1) : '0.0';
 
@@ -89,6 +91,19 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
 
         {/* Right Section: Theme Toggle, Badges & Auth */}
         <div className="flex items-center space-x-2.5">
+          {/* Live Active Visitors Badge */}
+          <div 
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-none bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)] text-xs font-bold"
+            title={`${totalActive} active on StudySST (${authenticatedCount} signed in, ${anonymousCount} visitors)`}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-500 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 bg-emerald-600"></span>
+            </span>
+            <span className="font-mono text-xs">{totalActive}</span>
+            <span className="hidden sm:inline text-[10px] text-[#75695A] font-semibold uppercase tracking-wider">live</span>
+          </div>
+
           {/* Light / Dark Mode Toggle Button */}
           <button
             type="button"
