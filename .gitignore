@@ -1,7 +1,34 @@
+# Dependencies
 node_modules/
-.DS_Store
+
+# Production build outputs
 dist/
-*.log
+client/dist/
+
+# Environment files
 .env
+.env.local
+.env.*.local
+
+# Databases and binary SQLite files
+*.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
+server/*.db
+server/*.sqlite
+
+# Uploaded user media
+uploads/
+server/uploads/
+
+# OS and system files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

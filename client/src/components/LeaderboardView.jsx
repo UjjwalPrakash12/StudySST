@@ -92,8 +92,10 @@ export default function LeaderboardView() {
                 <div>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-[#75695A] font-bold uppercase tracking-wider">Your Ranking</span>
-                    <span className="text-[#40382F] font-bold text-sm">{currentUserRank.user?.display_name || currentUser?.display_name}</span>
-                    {currentUserRank.user?.is_live && (
+                    <span className="text-[#40382F] font-bold text-sm">
+                      {currentUserRank.display_name || currentUserRank.user?.display_name || currentUser?.display_name}
+                    </span>
+                    {(currentUserRank.is_live || currentUserRank.user?.is_live) && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] bg-[#CCD5AE] text-[#40382F] text-[10px] font-bold border border-[rgba(64,56,47,0.12)]">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373] animate-pulse mr-1"></span>
                         LIVE NOW
@@ -109,7 +111,7 @@ export default function LeaderboardView() {
                 <div className="text-right">
                   <div className="text-xs text-[#75695A] font-medium">Verified Live Time</div>
                   <div className="font-mono text-base font-extrabold text-[#D4A373]">
-                    {formatLiveHours(currentUserRank.user?.total_live_seconds)}
+                    {formatLiveHours(currentUserRank.total_live_seconds ?? currentUserRank.user?.total_live_seconds)}
                   </div>
                 </div>
               </div>

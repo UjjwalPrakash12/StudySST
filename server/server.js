@@ -13,9 +13,22 @@ const db = require('./db');
 const app = express();
 const server = http.createServer(app);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'studystream_dev_secret_key_2026_super_secure';
+// Security hardening
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
-app.use(cors());
+const JWT_SECRET = process.env.JWT_SECRET || 'studystream_dev_secret_key_2026_super_secure';
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.warn('⚠️ WARNING: Using fallback JWT_SECRET in production. Set JWT_SECRET in environment variables!');
+}
+
+const allowedOrigin = process.env.CORS_ORIGIN || '*';
+app.use(cors({ origin: allowedOrigin }));
 app.use(express.json());
 
 // ==========================================
@@ -77,21 +90,17 @@ function cleanupStaleSessions() {
     `).all(staleCutoff);
 
     for (const session of staleSessions) {
-      const startMs = new Date(session.started_at).getTime();
-      const lastMs = new Date(session.last_heartbeat).getTime();
-      const duration = Math.max(0, Math.round((lastMs - startMs) / 1000));
-
       db.prepare(`
         UPDATE live_sessions 
-        SET ended_at = last_heartbeat, duration_seconds = ?, is_active = 0 
+        SET ended_at = last_heartbeat, is_active = 0 
         WHERE id = ?
-      `).run(duration, session.id);
+      `).run(session.id);
 
       db.prepare(`
         UPDATE users 
-        SET total_live_seconds = total_live_seconds + ?, is_live = 0, current_room_id = NULL 
+        SET is_live = 0, current_room_id = NULL 
         WHERE id = ?
-      `).run(duration, session.user_id);
+      `).run(session.user_id);
     }
   } catch (err) {
     console.error('Error during stale sessions cleanup:', err);
@@ -360,11 +369,18 @@ app.get('/api/blogs', optionalAuthenticateToken, (req, res) => {
 
     // Fetch blogs with author details
     const currentUserId = req.user ? req.user.id : null;
+    let queryParams = [];
+    let likedSelect = '0 as user_has_liked';
+    if (currentUserId) {
+      likedSelect = '(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = ?) > 0 as user_has_liked';
+      queryParams.push(currentUserId);
+    }
+
     const blogsQuery = `
       SELECT 
         b.id, b.title, b.content, b.category, b.image_url, b.likes_count, b.comments_count, b.created_at, b.updated_at,
         u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.is_live as author_is_live,
-        ${currentUserId ? `(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = '${currentUserId}') > 0 as user_has_liked` : '0 as user_has_liked'}
+        ${likedSelect}
       FROM blogs b
       JOIN users u ON b.author_id = u.id
       ${whereSQL}
@@ -372,7 +388,7 @@ app.get('/api/blogs', optionalAuthenticateToken, (req, res) => {
       LIMIT ? OFFSET ?
     `;
 
-    const blogs = db.prepare(blogsQuery).all(...params, limitNum, offset);
+    const blogs = db.prepare(blogsQuery).all(...queryParams, ...params, limitNum, offset);
 
     res.json({
       blogs: blogs.map(b => ({
@@ -392,15 +408,23 @@ app.get('/api/blogs', optionalAuthenticateToken, (req, res) => {
 app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
   try {
     const currentUserId = req.user ? req.user.id : null;
+    let likedSelect = '0 as user_has_liked';
+    let queryParams = [];
+    if (currentUserId) {
+      likedSelect = '(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = ?) > 0 as user_has_liked';
+      queryParams.push(currentUserId);
+    }
+    queryParams.push(req.params.id);
+
     const blog = db.prepare(`
       SELECT 
         b.*,
         u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.bio as author_bio, u.is_live as author_is_live,
-        ${currentUserId ? `(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = '${currentUserId}') > 0 as user_has_liked` : '0 as user_has_liked'}
+        ${likedSelect}
       FROM blogs b
       JOIN users u ON b.author_id = u.id
       WHERE b.id = ?
-    `).get(req.params.id);
+    `).get(...queryParams);
 
     if (!blog) {
       return res.status(404).json({ error: 'Blog not found' });
@@ -623,18 +647,27 @@ app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, re
 // ==========================================
 // API Routes: Study Rooms
 // ==========================================
+function getAccurateRoomOnlineCount(roomId) {
+  const roomState = activeRooms.get(roomId);
+  if (!roomState) return 0;
+  if (io && io.sockets && io.sockets.sockets) {
+    for (const socketId of Array.from(roomState.participants.keys())) {
+      if (!io.sockets.sockets.has(socketId)) {
+        roomState.participants.delete(socketId);
+      }
+    }
+  }
+  return roomState.participants.size;
+}
+
 app.get('/api/rooms', (req, res) => {
   try {
     const rooms = db.prepare('SELECT * FROM rooms ORDER BY created_at ASC').all();
 
-    const enrichedRooms = rooms.map(room => {
-      const roomState = activeRooms.get(room.id);
-      const onlineCount = roomState ? roomState.participants.size : 0;
-      return {
-        ...room,
-        onlineCount,
-      };
-    });
+    const enrichedRooms = rooms.map(room => ({
+      ...room,
+      onlineCount: getAccurateRoomOnlineCount(room.id),
+    }));
 
     res.json({ rooms: enrichedRooms });
   } catch (error) {
@@ -649,10 +682,7 @@ app.get('/api/rooms/:id', (req, res) => {
       return res.status(404).json({ error: 'Room not found' });
     }
 
-    const roomState = activeRooms.get(room.id);
-    const onlineCount = roomState ? roomState.participants.size : 0;
-
-    res.json({ room: { ...room, onlineCount } });
+    res.json({ room: { ...room, onlineCount: getAccurateRoomOnlineCount(room.id) } });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch room' });
   }
@@ -918,6 +948,10 @@ io.on('connection', (socket) => {
 
   // 1. Join Room & Start Authoritative Live Time Tracking
   socket.on('join-room', ({ roomId, user, mediaState, statusText }) => {
+    // If client was already in another room, clean up previous room first
+    if (currentRoomId && currentRoomId !== roomId) {
+      handleLeave(socket, currentRoomId);
+    }
     currentRoomId = roomId;
     currentUser = user || {
       id: 'guest-' + socket.id.slice(0, 5),
@@ -927,6 +961,15 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     const roomState = getOrCreateRoomState(roomId);
+
+    // Purge disconnected dead sockets from roomState
+    if (io && io.sockets && io.sockets.sockets) {
+      for (const sid of Array.from(roomState.participants.keys())) {
+        if (!io.sockets.sockets.has(sid)) {
+          roomState.participants.delete(sid);
+        }
+      }
+    }
 
     const participantInfo = {
       socketId: socket.id,
@@ -951,8 +994,8 @@ io.on('connection', (socket) => {
       `).run(currentUser.id);
 
       db.prepare(`
-        INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, is_active)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+        INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, duration_seconds, is_active)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1)
       `).run(sessionId, currentUser.id, roomId, socket.id);
 
       db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
@@ -963,6 +1006,7 @@ io.on('connection', (socket) => {
         roomId,
         startedAt: nowMs,
         lastHeartbeat: nowMs,
+        lastCreditedAt: nowMs,
       });
 
       // Acknowledge session started to client with verified start timestamp
@@ -995,22 +1039,42 @@ io.on('connection', (socket) => {
     console.log(`[Socket] ${currentUser.display_name} joined room ${roomId} (Total: ${roomState.participants.size})`);
   });
 
-  // 2. Periodic Live Session Heartbeat (Every 30s)
+  // 2. Periodic Live Session Heartbeat (Every 25-30s)
   socket.on('session-heartbeat', () => {
     if (activeLiveSessions.has(socket.id)) {
       const session = activeLiveSessions.get(socket.id);
       const nowMs = Date.now();
       session.lastHeartbeat = nowMs;
 
-      db.prepare(`
-        UPDATE live_sessions 
-        SET last_heartbeat = CURRENT_TIMESTAMP 
-        WHERE id = ? AND is_active = 1
-      `).run(session.sessionId);
+      // Incrementally credit verified live seconds while in the room
+      const deltaSeconds = Math.max(0, Math.round((nowMs - session.lastCreditedAt) / 1000));
+      if (deltaSeconds > 0) {
+        session.lastCreditedAt = nowMs;
+        db.prepare(`
+          UPDATE live_sessions 
+          SET last_heartbeat = CURRENT_TIMESTAMP, duration_seconds = duration_seconds + ? 
+          WHERE id = ? AND is_active = 1
+        `).run(deltaSeconds, session.sessionId);
 
-      const elapsedSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+        db.prepare(`
+          UPDATE users 
+          SET total_live_seconds = total_live_seconds + ? 
+          WHERE id = ?
+        `).run(deltaSeconds, session.userId);
+      } else {
+        db.prepare(`
+          UPDATE live_sessions 
+          SET last_heartbeat = CURRENT_TIMESTAMP 
+          WHERE id = ? AND is_active = 1
+        `).run(session.sessionId);
+      }
+
+      const totalElapsedSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+      const userRec = db.prepare('SELECT total_live_seconds FROM users WHERE id = ?').get(session.userId);
+
       socket.emit('heartbeat-ack', {
-        elapsedSeconds,
+        verifiedLiveSeconds: totalElapsedSeconds,
+        totalUserLiveSeconds: userRec ? userRec.total_live_seconds : 0,
         isLive: true
       });
     }
@@ -1095,6 +1159,9 @@ io.on('connection', (socket) => {
   });
 
   function handleLeave(s, roomId) {
+    if (currentRoomId === roomId) {
+      currentRoomId = null;
+    }
     s.leave(roomId);
     const roomState = activeRooms.get(roomId);
     if (roomState) {
@@ -1109,38 +1176,45 @@ io.on('connection', (socket) => {
     if (activeLiveSessions.has(s.id)) {
       const session = activeLiveSessions.get(s.id);
       const nowMs = Date.now();
-      const durationSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+      const deltaSeconds = Math.max(0, Math.round((nowMs - session.lastCreditedAt) / 1000));
+
+      if (deltaSeconds > 0) {
+        db.prepare(`
+          UPDATE live_sessions 
+          SET duration_seconds = duration_seconds + ? 
+          WHERE id = ? AND is_active = 1
+        `).run(deltaSeconds, session.sessionId);
+
+        db.prepare(`
+          UPDATE users 
+          SET total_live_seconds = total_live_seconds + ? 
+          WHERE id = ?
+        `).run(deltaSeconds, session.userId);
+      }
 
       db.prepare(`
         UPDATE live_sessions 
-        SET ended_at = CURRENT_TIMESTAMP, duration_seconds = ?, is_active = 0 
+        SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
         WHERE id = ?
-      `).run(durationSeconds, session.sessionId);
+      `).run(session.sessionId);
 
-      if (durationSeconds > 0) {
-        db.prepare(`
-          UPDATE users 
-          SET total_live_seconds = total_live_seconds + ?, is_live = 0, current_room_id = NULL 
-          WHERE id = ?
-        `).run(durationSeconds, session.userId);
+      db.prepare('UPDATE users SET is_live = 0, current_room_id = NULL WHERE id = ?').run(session.userId);
 
-        // Update streak if session was at least 60s
-        if (durationSeconds >= 60) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const userRec = db.prepare('SELECT last_active_date, current_streak, longest_streak FROM users WHERE id = ?').get(session.userId);
-          if (userRec) {
-            let nextStreak = userRec.current_streak || 1;
-            if (userRec.last_active_date) {
-              const diffDays = Math.floor(Math.abs(new Date() - new Date(userRec.last_active_date)) / (1000 * 60 * 60 * 24));
-              if (diffDays === 1) nextStreak += 1;
-              else if (diffDays > 1) nextStreak = 1;
-            }
-            const nextLongest = Math.max(userRec.longest_streak || 0, nextStreak);
-            db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
+      const totalSessionSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+      // Update streak if session was at least 60s
+      if (totalSessionSeconds >= 60) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const userRec = db.prepare('SELECT last_active_date, current_streak, longest_streak FROM users WHERE id = ?').get(session.userId);
+        if (userRec) {
+          let nextStreak = userRec.current_streak || 1;
+          if (userRec.last_active_date) {
+            const diffDays = Math.floor(Math.abs(new Date() - new Date(userRec.last_active_date)) / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) nextStreak += 1;
+            else if (diffDays > 1) nextStreak = 1;
           }
+          const nextLongest = Math.max(userRec.longest_streak || 0, nextStreak);
+          db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
         }
-      } else {
-        db.prepare('UPDATE users SET is_live = 0, current_room_id = NULL WHERE id = ?').run(session.userId);
       }
 
       activeLiveSessions.delete(s.id);

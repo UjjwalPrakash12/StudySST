@@ -128,14 +128,13 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 640 }, height: { ideal: 360 } },
-          audio: true,
+          audio: false, // Do not acquire microphone hardware until user clicks unmute
         });
 
         if (mounted) {
-          // Mute audio by default for silent library experience
-          stream.getAudioTracks().forEach(track => { track.enabled = false; });
           localStreamRef.current = stream;
           setLocalStream(stream);
+          setVideoActive(true);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
           }
@@ -143,8 +142,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           stream.getTracks().forEach(t => t.stop());
         }
       } catch (err) {
-        console.warn('Real webcam/mic not accessible or denied. Using virtual animated video avatar:', err.message);
-        setVideoActive(true);
+        console.warn('Real webcam not accessible or denied:', err.message);
+        setVideoActive(false);
       }
     }
 
@@ -316,29 +315,99 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
   }, [room.id]);
 
-  // Local Media Controls
-  const toggleMic = () => {
-    const nextState = !micActive;
-    setMicActive(nextState);
-    if (localStream) {
-      localStream.getAudioTracks().forEach(track => { track.enabled = nextState; });
+  // Local Media Controls (Complete Hardware Release on Stop)
+  const toggleMic = async () => {
+    if (micActive) {
+      // Physically stop audio capture hardware so OS indicator turns completely OFF
+      if (localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+          localStreamRef.current.removeTrack(track);
+        });
+      }
+      setMicActive(false);
+      socketRef.current?.emit('update-media-state', {
+        roomId: room.id,
+        mediaState: { mic: false }
+      });
+    } else {
+      // Re-acquire hardware microphone track
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const newTrack = audioStream.getAudioTracks()[0];
+        if (newTrack) {
+          let stream = localStreamRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            localStreamRef.current = stream;
+          }
+          // Remove old stopped audio tracks
+          stream.getAudioTracks().forEach(t => stream.removeTrack(t));
+          stream.addTrack(newTrack);
+          setLocalStream(stream);
+          setMicActive(true);
+          socketRef.current?.emit('update-media-state', {
+            roomId: room.id,
+            mediaState: { mic: true }
+          });
+        }
+      } catch (err) {
+        console.warn('Microphone permission denied or device unavailable:', err);
+        setMicActive(false);
+      }
     }
-    socketRef.current?.emit('update-media-state', {
-      roomId: room.id,
-      mediaState: { mic: nextState }
-    });
   };
 
-  const toggleVideo = () => {
-    const nextState = !videoActive;
-    setVideoActive(nextState);
-    if (localStream) {
-      localStream.getVideoTracks().forEach(track => { track.enabled = nextState; });
+  const toggleVideo = async () => {
+    if (videoActive) {
+      // Physically stop webcam capture hardware so OS indicator and camera LED turn completely OFF
+      if (localStreamRef.current) {
+        localStreamRef.current.getVideoTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+          localStreamRef.current.removeTrack(track);
+        });
+      }
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      setVideoActive(false);
+      socketRef.current?.emit('update-media-state', {
+        roomId: room.id,
+        mediaState: { video: false }
+      });
+    } else {
+      // Re-acquire hardware webcam track
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 360 } }
+        });
+        const newTrack = videoStream.getVideoTracks()[0];
+        if (newTrack) {
+          let stream = localStreamRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            localStreamRef.current = stream;
+          }
+          // Remove old stopped video tracks
+          stream.getVideoTracks().forEach(t => stream.removeTrack(t));
+          stream.addTrack(newTrack);
+          setLocalStream(stream);
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+          setVideoActive(true);
+          socketRef.current?.emit('update-media-state', {
+            roomId: room.id,
+            mediaState: { video: true }
+          });
+        }
+      } catch (err) {
+        console.warn('Webcam permission denied or device unavailable:', err);
+        setVideoActive(false);
+      }
     }
-    socketRef.current?.emit('update-media-state', {
-      roomId: room.id,
-      mediaState: { video: nextState }
-    });
   };
 
   const toggleScreenShare = async () => {
