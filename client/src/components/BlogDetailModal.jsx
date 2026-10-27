@@ -3,7 +3,7 @@ import {
   X, Heart, MessageSquare, Trash2, Edit3, Calendar, 
   Send, User, ShieldCheck, Share2, Check
 } from 'lucide-react';
-import { api } from '../utils/api';
+import { api, getFullImageUrl } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function BlogDetailModal({ 
@@ -215,7 +215,7 @@ export default function BlogDetailModal({
               {blog.image_url && (
                 <div className="w-full max-h-96 rounded-[12px] overflow-hidden border border-[rgba(64,56,47,0.14)] bg-[#FAEDCD]">
                   <img
-                    src={blog.image_url}
+                    src={getFullImageUrl(blog.image_url)}
                     alt={blog.title}
                     className="w-full object-cover max-h-96"
                   />

@@ -1,4 +1,11 @@
-const BASE_URL = '/api';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const BASE_URL = `${BACKEND_URL}/api`;
+
+export const getFullImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 function getAuthHeaders() {
   const token = localStorage.getItem('studystream_token');

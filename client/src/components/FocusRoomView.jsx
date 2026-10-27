@@ -195,7 +195,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
   // Setup Socket.IO connection & signaling
   useEffect(() => {
-    const socket = io('/', {
+    const socketEndpoint = import.meta.env.VITE_API_URL || window.location.origin;
+    const socket = io(socketEndpoint, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
     });

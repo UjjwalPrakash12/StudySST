@@ -3,7 +3,7 @@ import {
   BookOpen, Edit3, Search, Heart, MessageSquare, Plus, 
   Calendar, User, ArrowRight, Filter, TrendingUp, Sparkles, AlertCircle
 } from 'lucide-react';
-import { api } from '../utils/api';
+import { api, getFullImageUrl } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import BlogEditorModal from './BlogEditorModal';
 import BlogDetailModal from './BlogDetailModal';
@@ -243,7 +243,7 @@ export default function BlogCommunityView({ onOpenAuth }) {
                     {blog.image_url ? (
                       <div className="w-full h-44 overflow-hidden border-b border-[rgba(64,56,47,0.1)] bg-[#FAEDCD]">
                         <img
-                          src={blog.image_url}
+                          src={getFullImageUrl(blog.image_url)}
                           alt={blog.title}
                           className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
                         />
