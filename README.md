@@ -114,8 +114,8 @@ It combines:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/ujjwalprakash/studystream-live.git
-   cd studystream-live
+   git clone https://github.com/UjjwalPrakash12/StudySST.git
+   cd StudySST
    ```
 
 2. **Install all dependencies:**
@@ -184,7 +184,7 @@ Student Name:
 Ujjwal Prakash
 
 Repository:
-https://github.com/ujjwalprakash/studystream-live
+https://github.com/UjjwalPrakash12/StudySST
 
 Live Application:
 http://localhost:5050
