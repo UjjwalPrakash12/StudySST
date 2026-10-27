@@ -42,6 +42,14 @@ export function AuthProvider({ children }) {
     return res.user;
   };
 
+  const loginWithGoogle = async (googleProfile) => {
+    const res = await api.googleAuth(googleProfile);
+    localStorage.setItem('studystream_token', res.token);
+    setToken(res.token);
+    setUser(res.user);
+    return res.user;
+  };
+
   const logout = () => {
     localStorage.removeItem('studystream_token');
     setToken(null);
@@ -70,6 +78,7 @@ export function AuthProvider({ children }) {
         loading,
         login,
         register,
+        loginWithGoogle,
         logout,
         updateUserState,
         refreshUser,

@@ -1,9 +1,11 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon } from 'lucide-react';
 
 export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
   const { user, logout, isAuthenticated } = useAuth();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   const totalLiveHours = user ? ((user.total_live_seconds || (user.total_focus_minutes * 60)) / 3600).toFixed(1) : '0.0';
 
@@ -85,8 +87,23 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
           </button>
         </nav>
 
-        {/* Right Section: Badges & Auth */}
-        <div className="flex items-center space-x-3">
+        {/* Right Section: Theme Toggle, Badges & Auth */}
+        <div className="flex items-center space-x-2.5">
+          {/* Light / Dark Mode Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            title={isDark ? "Switch to Warm Ivory Light Mode" : "Switch to Coordinated Dark Mode"}
+            className="p-2 rounded-[10px] bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.14)] shadow-sm hover:scale-105 active:scale-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#D4A373]"
+          >
+            {isDark ? (
+              <Moon className="w-4 h-4 text-[#D4A373] transition-transform duration-300 transform rotate-12" />
+            ) : (
+              <Sun className="w-4 h-4 text-[#D4A373] transition-transform duration-300 transform rotate-0" />
+            )}
+          </button>
+
           {isAuthenticated ? (
             <>
               {/* Streak badge */}
@@ -133,7 +150,7 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
                 className="flex items-center space-x-2 px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
                 <LogIn className="w-4 h-4" />
-                <span>Sign In / Demo</span>
+                <span>Sign In / Register</span>
               </button>
             </div>
           )}

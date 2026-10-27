@@ -98,3 +98,146 @@
 .btn-soft:hover {
   background-color: #dbe0b5;
 }
+
+/* ==========================================================================
+   COORDINATED EARTHY DARK MODE PALETTE
+   Main bg: #25291F
+   Secondary bg: #343B2B
+   Cards/surfaces: #454D37
+   Borders: #555C48
+   Primary accent: #D4A373
+   Primary buttons: #A66F3F
+   Main text: #FEFAE0
+   Secondary text: #D8D3BC
+   ========================================================================== */
+
+.dark {
+  --color-ivory: #25291F;
+  --color-sand: #343B2B;
+  --color-soft-green: #454D37;
+  --color-sage: #555C48;
+  --color-terracotta: #D4A373;
+  --color-text-primary: #FEFAE0;
+  --color-text-secondary: #D8D3BC;
+  --color-border: #555C48;
+  --color-surface: #454D37;
+}
+
+.dark body {
+  background-color: #25291F !important;
+  color: #FEFAE0 !important;
+}
+
+/* Main background wrappers */
+.dark .app-main-wrapper,
+.dark main,
+.dark .app-main-wrapper > div {
+  background-color: #25291F;
+}
+
+/* Base surface overrides in dark mode */
+.dark .bg-\[\#FEFAE0\] {
+  background-color: #454D37 !important;
+}
+.dark .bg-\[\#FEFAE0\]\/70,
+.dark .bg-\[\#FEFAE0\]\/80,
+.dark .bg-\[\#FEFAE0\]\/90,
+.dark .bg-\[\#FEFAE0\]\/95 {
+  background-color: rgba(69, 77, 55, 0.85) !important;
+}
+
+/* Secondary background & inputs */
+.dark .bg-\[\#FAEDCD\] {
+  background-color: #343B2B !important;
+}
+.dark .bg-\[\#FAEDCD\]\/50,
+.dark .bg-\[\#FAEDCD\]\/70 {
+  background-color: rgba(52, 59, 43, 0.65) !important;
+}
+
+/* Soft blush-green surfaces to dark cards */
+.dark .bg-\[\#E9EDC9\] {
+  background-color: #454D37 !important;
+}
+.dark .bg-\[\#E9EDC9\]\/70 {
+  background-color: rgba(69, 77, 55, 0.7) !important;
+}
+
+/* Sage to borders/accent surfaces */
+.dark .bg-\[\#CCD5AE\] {
+  background-color: #555C48 !important;
+}
+.dark .bg-\[\#CCD5AE\]\/40 {
+  background-color: rgba(85, 92, 72, 0.4) !important;
+}
+
+/* Primary buttons in dark mode: #A66F3F */
+.dark button.bg-\[\#D4A373\],
+.dark .btn-terracotta,
+.dark button[type="submit"].bg-\[\#D4A373\] {
+  background-color: #A66F3F !important;
+  color: #FEFAE0 !important;
+}
+.dark button.bg-\[\#D4A373\]:hover,
+.dark .btn-terracotta:hover {
+  background-color: #936034 !important;
+}
+
+/* Main text and secondary text */
+.dark .text-\[\#40382F\] {
+  color: #FEFAE0 !important;
+}
+.dark .text-\[\#75695A\] {
+  color: #D8D3BC !important;
+}
+.dark .text-\[\#9E9080\],
+.dark .placeholder-\[\#9E9080\],
+.dark .placeholder-\[\#75695A\]\/70 {
+  color: #D8D3BC !important;
+}
+.dark ::placeholder {
+  color: #D8D3BC !important;
+  opacity: 0.7;
+}
+
+/* Borders in dark mode */
+.dark .border-\[rgba\(64\,56\,47\,0\.14\)\],
+.dark .border-\[rgba\(64\,56\,47\,0\.12\)\],
+.dark .border-\[rgba\(64\,56\,47\,0\.1\)\],
+.dark .border-\[rgba\(64\,56\,47\,0\.08\)\],
+.dark .border-\[rgba\(64\,56\,47\,0\.2\)\],
+.dark .border-\[rgba\(64\,56\,47\,0\.3\)\] {
+  border-color: #555C48 !important;
+}
+.dark .divide-\[rgba\(64\,56\,47\,0\.08\)\] > :not([hidden]) ~ :not([hidden]),
+.dark .divide-\[rgba\(64\,56\,47\,0\.1\)\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #555C48 !important;
+}
+
+/* Hover states in dark mode */
+.dark .hover\:bg-\[\#FAEDCD\]:hover {
+  background-color: #343B2B !important;
+}
+.dark .hover\:bg-\[\#FAEDCD\]\/50:hover,
+.dark .hover\:bg-\[\#FAEDCD\]\/70:hover {
+  background-color: rgba(52, 59, 43, 0.7) !important;
+}
+.dark .hover\:bg-\[\#E9EDC9\]:hover {
+  background-color: #454D37 !important;
+}
+.dark .hover\:bg-\[\#CCD5AE\]:hover {
+  background-color: #555C48 !important;
+}
+
+/* Dark mode scrollbars */
+.dark ::-webkit-scrollbar-track {
+  background: #343B2B;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #555C48;
+  border: 2px solid #343B2B;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #A66F3F;
+}
+

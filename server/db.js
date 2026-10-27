@@ -144,6 +144,9 @@ try {
 try {
   db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user';");
 } catch (e) {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN google_id TEXT;");
+} catch (e) {}
 
 // Seed default rooms if empty
 const roomCount = db.prepare('SELECT COUNT(*) as count FROM rooms').get().count;

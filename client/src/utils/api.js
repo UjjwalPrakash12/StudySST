@@ -36,6 +36,15 @@ export const api = {
     return handleResponse(res);
   },
 
+  async googleAuth(payload) {
+    const res = await fetch(`${BASE_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res);
+  },
+
   async getMe() {
     const res = await fetch(`${BASE_URL}/auth/me`, {
       headers: getAuthHeaders(),

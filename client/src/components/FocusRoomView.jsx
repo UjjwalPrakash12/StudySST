@@ -58,8 +58,69 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const socketRef = useRef(null);
   const localVideoRef = useRef(null);
   const chatScrollRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
 
-  // Initialize Media Stream (with graceful camera fallback)
+  // Authoritative hardware track termination
+  const stopAllMediaTracks = () => {
+    if (localStreamRef.current) {
+      try {
+        localStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+      } catch (err) {
+        console.warn('Error stopping local tracks:', err);
+      }
+      localStreamRef.current = null;
+    }
+    if (screenStreamRef.current) {
+      try {
+        screenStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+      } catch (err) {
+        console.warn('Error stopping screen share tracks:', err);
+      }
+      screenStreamRef.current = null;
+    }
+    if (localVideoRef.current && localVideoRef.current.srcObject) {
+      try {
+        const stream = localVideoRef.current.srcObject;
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach(t => {
+            t.stop();
+            t.enabled = false;
+          });
+        }
+        localVideoRef.current.srcObject = null;
+      } catch (err) {
+        console.warn('Error clearing video srcObject:', err);
+      }
+    }
+    setLocalStream(null);
+    setScreenSharing(false);
+  };
+
+  // Leave room handler that guarantees complete track termination & socket disconnect
+  const handleLeaveRoom = () => {
+    stopAllMediaTracks();
+    soundSynthesizer.stopAll();
+    if (socketRef.current) {
+      try {
+        socketRef.current.emit('leave-room', { roomId: room.id });
+        socketRef.current.disconnect();
+      } catch (e) {}
+    }
+    peers.forEach(pc => {
+      try { pc.close(); } catch (e) {}
+    });
+    setPeers(new Map());
+    onLeaveRoom();
+  };
+
+  // Initialize Media Stream (with graceful camera fallback and cleanup)
   useEffect(() => {
     let mounted = true;
 
@@ -73,10 +134,13 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         if (mounted) {
           // Mute audio by default for silent library experience
           stream.getAudioTracks().forEach(track => { track.enabled = false; });
+          localStreamRef.current = stream;
           setLocalStream(stream);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
           }
+        } else {
+          stream.getTracks().forEach(t => t.stop());
         }
       } catch (err) {
         console.warn('Real webcam/mic not accessible or denied. Using virtual animated video avatar:', err.message);
@@ -86,13 +150,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
     setupMedia();
 
-    return () => {
-      mounted = false;
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+    // Browser unload / tab close / navigating away safety
+    const handleBeforeUnload = () => {
+      stopAllMediaTracks();
+      if (socketRef.current) {
+        try {
+          socketRef.current.emit('leave-room', { roomId: room.id });
+          socketRef.current.disconnect();
+        } catch (e) {}
       }
     };
-  }, []);
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      stopAllMediaTracks();
+    };
+  }, [room.id]);
 
   // Sync video element when stream is ready
   useEffect(() => {
@@ -267,15 +345,20 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     if (!screenSharing) {
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        screenStreamRef.current = screenStream;
         setScreenSharing(true);
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = screenStream;
         }
 
         screenStream.getVideoTracks()[0].onended = () => {
+          try {
+            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+          } catch (e) {}
+          screenStreamRef.current = null;
           setScreenSharing(false);
-          if (localVideoRef.current && localStream) {
-            localVideoRef.current.srcObject = localStream;
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
           }
           socketRef.current?.emit('update-media-state', {
             roomId: room.id,
@@ -291,9 +374,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         console.warn('Screen share cancelled:', e);
       }
     } else {
+      if (screenStreamRef.current) {
+        try {
+          screenStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+        } catch (e) {}
+        screenStreamRef.current = null;
+      }
       setScreenSharing(false);
-      if (localVideoRef.current && localStream) {
-        localVideoRef.current.srcObject = localStream;
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
       }
       socketRef.current?.emit('update-media-state', {
         roomId: room.id,
@@ -415,7 +504,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         {/* Left: Room Title, Category, Online count */}
         <div className="flex items-center space-x-3">
           <button
-            onClick={onLeaveRoom}
+            onClick={handleLeaveRoom}
             className="p-1.5 rounded-[8px] text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9] transition-all"
             title="Leave room"
           >
@@ -995,7 +1084,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         {/* Right: Leave Room */}
         <div>
           <button
-            onClick={onLeaveRoom}
+            onClick={handleLeaveRoom}
             className="flex items-center space-x-2 px-4 py-2.5 rounded-[10px] bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-xs font-bold transition-all hover:scale-[1.02]"
           >
             <LogOut className="w-4 h-4" />

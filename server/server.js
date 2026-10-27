@@ -224,6 +224,65 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { email, displayName, photoUrl, uid, idToken } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required for Google authentication' });
+    }
+
+    // Check if user already exists with this email or google_id
+    let user = db.prepare('SELECT * FROM users WHERE email = ? OR google_id = ?').get(email, uid || '');
+
+    if (!user) {
+      // Create new user for first-time Google signup
+      const userId = 'user-' + crypto.randomUUID();
+      const baseUsername = (email.split('@')[0] || 'scholar').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 15);
+      
+      // Ensure unique username
+      let usernameCandidate = baseUsername || 'scholar';
+      const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(usernameCandidate);
+      if (existingUsername) {
+        usernameCandidate = `${baseUsername}_${Math.random().toString(36).slice(2, 6)}`;
+      }
+
+      const randomPassword = crypto.randomUUID();
+      const salt = bcrypt.genSaltSync(10);
+      const passwordHash = bcrypt.hashSync(randomPassword, salt);
+      const userDisplayName = displayName || usernameCandidate;
+      const avatarSeed = photoUrl || usernameCandidate;
+
+      db.prepare(`
+        INSERT INTO users (
+          id, username, email, password_hash, display_name, avatar_seed,
+          daily_goal_minutes, total_focus_minutes, total_live_seconds, current_streak, longest_streak, bio, role, google_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 120, 0, 0, 0, 0, 'Ready to focus and achieve big goals!', 'user', ?)
+      `).run(
+        userId, usernameCandidate, email, passwordHash, userDisplayName, avatarSeed, uid || null
+      );
+
+      user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    } else if (uid && !user.google_id) {
+      // Link google_id if not linked yet
+      db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(uid, user.id);
+    }
+
+    const { password_hash, ...safeUser } = user;
+    const token = generateToken(safeUser);
+
+    res.json({
+      message: 'Google authentication successful',
+      token,
+      user: safeUser
+    });
+  } catch (error) {
+    console.error('Google Auth error:', error);
+    res.status(500).json({ error: 'Internal server error during Google sign in' });
+  }
+});
+
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   try {
     const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
