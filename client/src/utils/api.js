@@ -96,8 +96,86 @@ export const api = {
     return handleResponse(res);
   },
 
-  async getLeaderboard() {
-    const res = await fetch(`${BASE_URL}/leaderboard`);
+  async getLeaderboard(period = 'all_time') {
+    const res = await fetch(`${BASE_URL}/leaderboard?period=${encodeURIComponent(period)}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  // Blogs & Community
+  async getBlogs({ search = '', category = '', sort = 'latest', page = 1, limit = 12 } = {}) {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (category) params.append('category', category);
+    if (sort) params.append('sort', sort);
+    if (page) params.append('page', page);
+    if (limit) params.append('limit', limit);
+    const res = await fetch(`${BASE_URL}/blogs?${params.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async getBlog(id) {
+    const res = await fetch(`${BASE_URL}/blogs/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async createBlog(formData) {
+    const token = localStorage.getItem('studystream_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${BASE_URL}/blogs`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
+  async updateBlog(id, formData) {
+    const token = localStorage.getItem('studystream_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${BASE_URL}/blogs/${id}`, {
+      method: 'PUT',
+      headers,
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
+  async deleteBlog(id) {
+    const res = await fetch(`${BASE_URL}/blogs/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async toggleBlogLike(id) {
+    const res = await fetch(`${BASE_URL}/blogs/${id}/like`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async addBlogComment(blogId, content) {
+    const res = await fetch(`${BASE_URL}/blogs/${blogId}/comments`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ content }),
+    });
+    return handleResponse(res);
+  },
+
+  async deleteBlogComment(blogId, commentId) {
+    const res = await fetch(`${BASE_URL}/blogs/${blogId}/comments/${commentId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 

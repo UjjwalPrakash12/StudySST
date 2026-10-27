@@ -5,13 +5,14 @@ import LobbyView from './components/LobbyView';
 import FocusRoomView from './components/FocusRoomView';
 import AnalyticsView from './components/AnalyticsView';
 import LeaderboardView from './components/LeaderboardView';
+import BlogCommunityView from './components/BlogCommunityView';
 import AuthModal from './components/AuthModal';
 import CreateRoomModal from './components/CreateRoomModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
 function AppContent() {
   const { isAuthenticated } = useAuth();
-  const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'analytics' | 'leaderboard'
+  const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'blogs' | 'analytics' | 'leaderboard'
   const [activeRoom, setActiveRoom] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
@@ -56,6 +57,12 @@ function AppContent() {
             }}
             onOpenAuth={() => setIsAuthOpen(true)}
             isAuthenticated={isAuthenticated}
+          />
+        )}
+
+        {currentView === 'blogs' && (
+          <BlogCommunityView
+            onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}
 

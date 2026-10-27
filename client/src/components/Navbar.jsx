@@ -32,10 +32,10 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
         </div>
 
         {/* Center Nav Views */}
-        <nav className="hidden md:flex items-center space-x-1 bg-white/5 p-1 rounded border border-white/5">
+        <nav className="hidden md:flex items-center space-x-1 bg-white/5 p-1 rounded-sm border border-white/5">
           <button
             onClick={() => setCurrentView('lobby')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-sm text-sm font-medium transition-all ${
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all ${
               currentView === 'lobby'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -46,27 +46,39 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
           </button>
 
           <button
-            onClick={() => setCurrentView('analytics')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-sm text-sm font-medium transition-all ${
-              currentView === 'analytics'
+            onClick={() => setCurrentView('blogs')}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all ${
+              currentView === 'blogs'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <BarChart3 className="w-4 h-4" />
-            <span>Stats & Streaks</span>
+            <Sparkles className="w-4 h-4 text-pink-400" />
+            <span>Community Blogs</span>
           </button>
 
           <button
             onClick={() => setCurrentView('leaderboard')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-sm text-sm font-medium transition-all ${
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all ${
               currentView === 'leaderboard'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <Trophy className="w-4 h-4" />
+            <Trophy className="w-4 h-4 text-amber-400" />
             <span>Leaderboard</span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView('analytics')}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all ${
+              currentView === 'analytics'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-300 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-indigo-400" />
+            <span>Stats & Streaks</span>
           </button>
         </nav>
 

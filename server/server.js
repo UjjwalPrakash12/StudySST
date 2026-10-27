@@ -7,6 +7,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const multer = require('multer');
 const db = require('./db');
 
 const app = express();
@@ -17,39 +18,94 @@ const JWT_SECRET = process.env.JWT_SECRET || 'studystream_dev_secret_key_2026_su
 app.use(cors());
 app.use(express.json());
 
-// In-Memory Live State for Rooms, WebSockets, and Synced Pomodoro Timers
+// ==========================================
+// File Uploads Configuration (Multer)
+// ==========================================
+const uploadsDir = path.join(__dirname, 'uploads', 'blogs');
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
+    cb(null, 'blog-' + crypto.randomUUID() + safeExt);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid image type. Only JPEG, PNG, and WebP are allowed.'));
+    }
+  }
+});
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ==========================================
+// Live Session & Presence State (In-Memory)
+// ==========================================
 const activeRooms = new Map();
+const activeLiveSessions = new Map(); // socketId -> { sessionId, userId, roomId, startedAt, lastHeartbeat }
 
 function getOrCreateRoomState(roomId) {
   if (!activeRooms.has(roomId)) {
-    // Check room settings from DB
-    const roomInfo = db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId);
-    const workMins = roomInfo ? roomInfo.pomodoro_work_mins : 25;
-    const breakMins = roomInfo ? roomInfo.pomodoro_break_mins : 5;
-
     activeRooms.set(roomId, {
       participants: new Map(), // socketId -> participant info
-      messages: [], // last 50 messages
-      timer: {
-        isRunning: false,
-        mode: 'work', // 'work' | 'break'
-        remainingSeconds: workMins * 60,
-        totalSeconds: workMins * 60,
-        workMins,
-        breakMins,
-        timerInterval: null,
-      }
+      messages: [], // last 60 messages
     });
   }
   return activeRooms.get(roomId);
 }
+
+// Clean up stale abandoned sessions every 60s
+function cleanupStaleSessions() {
+  try {
+    const staleCutoff = new Date(Date.now() - 90 * 1000).toISOString();
+    const staleSessions = db.prepare(`
+      SELECT id, user_id, started_at, last_heartbeat 
+      FROM live_sessions 
+      WHERE is_active = 1 AND last_heartbeat < ?
+    `).all(staleCutoff);
+
+    for (const session of staleSessions) {
+      const startMs = new Date(session.started_at).getTime();
+      const lastMs = new Date(session.last_heartbeat).getTime();
+      const duration = Math.max(0, Math.round((lastMs - startMs) / 1000));
+
+      db.prepare(`
+        UPDATE live_sessions 
+        SET ended_at = last_heartbeat, duration_seconds = ?, is_active = 0 
+        WHERE id = ?
+      `).run(duration, session.id);
+
+      db.prepare(`
+        UPDATE users 
+        SET total_live_seconds = total_live_seconds + ?, is_live = 0, current_room_id = NULL 
+        WHERE id = ?
+      `).run(duration, session.user_id);
+    }
+  } catch (err) {
+    console.error('Error during stale sessions cleanup:', err);
+  }
+}
+setInterval(cleanupStaleSessions, 60000);
+cleanupStaleSessions();
 
 // ==========================================
 // Authentication Middleware & Helpers
 // ==========================================
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, email: user.email },
+    { id: user.id, username: user.username, email: user.email, role: user.role || 'user' },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -72,6 +128,19 @@ function authenticateToken(req, res, next) {
   });
 }
 
+function optionalAuthenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return next();
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (!err && decoded) {
+      req.user = decoded;
+    }
+    next();
+  });
+}
+
 // ==========================================
 // API Routes: Authentication
 // ==========================================
@@ -90,7 +159,6 @@ app.post('/api/auth/register', (req, res) => {
     const cleanUsername = username.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
 
-    // Check duplicate
     const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(cleanUsername, cleanEmail);
     if (existing) {
       return res.status(409).json({ error: 'Username or email already exists' });
@@ -104,11 +172,11 @@ app.post('/api/auth/register', (req, res) => {
     const todayStr = new Date().toISOString().split('T')[0];
 
     db.prepare(`
-      INSERT INTO users (id, username, email, password_hash, display_name, avatar_seed, last_active_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, username, email, password_hash, display_name, avatar_seed, last_active_date, role)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'user')
     `).run(userId, cleanUsername, cleanEmail, passwordHash, display, avatarSeed, todayStr);
 
-    const newUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, current_streak, longest_streak, bio, created_at FROM users WHERE id = ?').get(userId);
+    const newUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(userId);
     const token = generateToken(newUser);
 
     res.status(201).json({
@@ -124,7 +192,7 @@ app.post('/api/auth/register', (req, res) => {
 
 app.post('/api/auth/login', (req, res) => {
   try {
-    const { login, password } = req.body; // login can be username or email
+    const { login, password } = req.body;
 
     if (!login || !password) {
       return res.status(400).json({ error: 'Username/email and password required' });
@@ -158,7 +226,7 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   try {
-    const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, current_streak, longest_streak, bio, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -187,10 +255,309 @@ app.put('/api/auth/profile', authenticateToken, (req, res) => {
       WHERE id = ?
     `).run(newDisplayName, newGoal, newBio, newAvatar, req.user.id);
 
-    const updatedUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, current_streak, longest_streak, bio, created_at FROM users WHERE id = ?').get(req.user.id);
+    const updatedUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
     res.json({ user: updatedUser });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// ==========================================
+// FEATURE 1: Community Blogs Endpoints
+// ==========================================
+app.get('/api/blogs', optionalAuthenticateToken, (req, res) => {
+  try {
+    const { sort = 'latest', category, search, page = 1, limit = 10 } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(50, parseInt(limit) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereClauses = ["b.status = 'published'"];
+    let params = [];
+
+    if (category && category !== 'All') {
+      whereClauses.push('b.category = ?');
+      params.push(category);
+    }
+
+    if (search && search.trim()) {
+      whereClauses.push('(b.title LIKE ? OR b.content LIKE ? OR u.display_name LIKE ? OR u.username LIKE ?)');
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term, term);
+    }
+
+    const whereSQL = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    let orderSQL = 'ORDER BY b.created_at DESC';
+    if (sort === 'most_liked') {
+      orderSQL = 'ORDER BY b.likes_count DESC, b.created_at DESC';
+    } else if (sort === 'most_discussed') {
+      orderSQL = 'ORDER BY b.comments_count DESC, b.created_at DESC';
+    }
+
+    // Count total blogs
+    const countQuery = `SELECT COUNT(*) as total FROM blogs b JOIN users u ON b.author_id = u.id ${whereSQL}`;
+    const totalCount = db.prepare(countQuery).get(...params).total;
+
+    // Fetch blogs with author details
+    const currentUserId = req.user ? req.user.id : null;
+    const blogsQuery = `
+      SELECT 
+        b.id, b.title, b.content, b.category, b.image_url, b.likes_count, b.comments_count, b.created_at, b.updated_at,
+        u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.is_live as author_is_live,
+        ${currentUserId ? `(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = '${currentUserId}') > 0 as user_has_liked` : '0 as user_has_liked'}
+      FROM blogs b
+      JOIN users u ON b.author_id = u.id
+      ${whereSQL}
+      ${orderSQL}
+      LIMIT ? OFFSET ?
+    `;
+
+    const blogs = db.prepare(blogsQuery).all(...params, limitNum, offset);
+
+    res.json({
+      blogs: blogs.map(b => ({
+        ...b,
+        user_has_liked: Boolean(b.user_has_liked)
+      })),
+      total: totalCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum),
+    });
+  } catch (error) {
+    console.error('Fetch blogs error:', error);
+    res.status(500).json({ error: 'Failed to fetch community blogs' });
+  }
+});
+
+app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
+  try {
+    const currentUserId = req.user ? req.user.id : null;
+    const blog = db.prepare(`
+      SELECT 
+        b.*,
+        u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.bio as author_bio, u.is_live as author_is_live,
+        ${currentUserId ? `(SELECT COUNT(*) FROM blog_likes bl WHERE bl.blog_id = b.id AND bl.user_id = '${currentUserId}') > 0 as user_has_liked` : '0 as user_has_liked'}
+      FROM blogs b
+      JOIN users u ON b.author_id = u.id
+      WHERE b.id = ?
+    `).get(req.params.id);
+
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    // Fetch comments
+    const comments = db.prepare(`
+      SELECT 
+        c.id, c.comment, c.comment as content, c.created_at,
+        u.id as user_id, u.username, u.display_name, u.display_name as author_name, u.avatar_seed
+      FROM blog_comments c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.blog_id = ?
+      ORDER BY c.created_at ASC
+    `).all(blog.id);
+
+    res.json({
+      blog: {
+        ...blog,
+        user_has_liked: Boolean(blog.user_has_liked),
+        comments,
+      }
+    });
+  } catch (error) {
+    console.error('Get blog detail error:', error);
+    res.status(500).json({ error: 'Failed to load blog' });
+  }
+});
+
+app.post('/api/blogs', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { title, content, category } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: 'Blog title is required' });
+    }
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Blog content is required' });
+    }
+
+    const blogId = 'blog-' + crypto.randomUUID();
+    let imageUrl = null;
+
+    if (req.file) {
+      imageUrl = '/uploads/blogs/' + req.file.filename;
+    }
+
+    db.prepare(`
+      INSERT INTO blogs (id, author_id, title, content, category, image_url, likes_count, comments_count, status)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'published')
+    `).run(
+      blogId,
+      req.user.id,
+      title.trim(),
+      content.trim(),
+      category ? category.trim() : 'General',
+      imageUrl
+    );
+
+    const createdBlog = db.prepare(`
+      SELECT b.*, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar
+      FROM blogs b JOIN users u ON b.author_id = u.id WHERE b.id = ?
+    `).get(blogId);
+
+    res.status(201).json({ blog: { ...createdBlog, user_has_liked: false } });
+  } catch (error) {
+    console.error('Create blog error:', error);
+    res.status(500).json({ error: error.message || 'Failed to publish blog' });
+  }
+});
+
+app.put('/api/blogs/:id', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const blog = db.prepare('SELECT * FROM blogs WHERE id = ?').get(req.params.id);
+    if (!blog) return res.status(404).json({ error: 'Blog not found' });
+
+    // Authorization check
+    if (blog.author_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to edit this blog' });
+    }
+
+    const { title, content, category, removeImage } = req.body;
+    let newImageUrl = blog.image_url;
+
+    if (req.file) {
+      newImageUrl = '/uploads/blogs/' + req.file.filename;
+    } else if (removeImage === 'true') {
+      newImageUrl = null;
+    }
+
+    db.prepare(`
+      UPDATE blogs 
+      SET title = ?, content = ?, category = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      title ? title.trim() : blog.title,
+      content ? content.trim() : blog.content,
+      category ? category.trim() : blog.category,
+      newImageUrl,
+      blog.id
+    );
+
+    const updated = db.prepare('SELECT * FROM blogs WHERE id = ?').get(blog.id);
+    res.json({ blog: updated });
+  } catch (error) {
+    console.error('Update blog error:', error);
+    res.status(500).json({ error: 'Failed to update blog' });
+  }
+});
+
+app.delete('/api/blogs/:id', authenticateToken, (req, res) => {
+  try {
+    const blog = db.prepare('SELECT * FROM blogs WHERE id = ?').get(req.params.id);
+    if (!blog) return res.status(404).json({ error: 'Blog not found' });
+
+    if (blog.author_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to delete this blog' });
+    }
+
+    // Delete image file if exists
+    if (blog.image_url && blog.image_url.startsWith('/uploads/blogs/')) {
+      const filePath = path.join(__dirname, blog.image_url);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (e) {}
+      }
+    }
+
+    db.prepare('DELETE FROM blogs WHERE id = ?').run(blog.id);
+    res.json({ success: true, message: 'Blog deleted successfully' });
+  } catch (error) {
+    console.error('Delete blog error:', error);
+    res.status(500).json({ error: 'Failed to delete blog' });
+  }
+});
+
+app.post('/api/blogs/:id/like', authenticateToken, (req, res) => {
+  try {
+    const blog = db.prepare('SELECT id, likes_count FROM blogs WHERE id = ?').get(req.params.id);
+    if (!blog) return res.status(404).json({ error: 'Blog not found' });
+
+    const existingLike = db.prepare('SELECT id FROM blog_likes WHERE blog_id = ? AND user_id = ?').get(blog.id, req.user.id);
+
+    if (existingLike) {
+      // Unlike
+      db.prepare('DELETE FROM blog_likes WHERE id = ?').run(existingLike.id);
+      db.prepare('UPDATE blogs SET likes_count = MAX(0, likes_count - 1) WHERE id = ?').run(blog.id);
+      const updated = db.prepare('SELECT likes_count FROM blogs WHERE id = ?').get(blog.id);
+      return res.json({ liked: false, likesCount: updated.likes_count });
+    } else {
+      // Like
+      const likeId = 'like-' + crypto.randomUUID();
+      db.prepare('INSERT INTO blog_likes (id, blog_id, user_id) VALUES (?, ?, ?)').run(likeId, blog.id, req.user.id);
+      db.prepare('UPDATE blogs SET likes_count = likes_count + 1 WHERE id = ?').run(blog.id);
+      const updated = db.prepare('SELECT likes_count FROM blogs WHERE id = ?').get(blog.id);
+      return res.json({ liked: true, likesCount: updated.likes_count });
+    }
+  } catch (error) {
+    console.error('Like toggle error:', error);
+    res.status(500).json({ error: 'Failed to process like action' });
+  }
+});
+
+app.post('/api/blogs/:id/comments', authenticateToken, (req, res) => {
+  try {
+    const rawComment = (req.body.comment || req.body.content || '').trim();
+    if (!rawComment) {
+      return res.status(400).json({ error: 'Comment text cannot be empty' });
+    }
+
+    const blog = db.prepare('SELECT id FROM blogs WHERE id = ?').get(req.params.id);
+    if (!blog) return res.status(404).json({ error: 'Blog not found' });
+
+    const commentId = 'comm-' + crypto.randomUUID();
+    db.prepare('INSERT INTO blog_comments (id, blog_id, user_id, comment) VALUES (?, ?, ?, ?)').run(
+      commentId,
+      blog.id,
+      req.user.id,
+      rawComment
+    );
+
+    db.prepare('UPDATE blogs SET comments_count = comments_count + 1 WHERE id = ?').run(blog.id);
+
+    const createdComment = db.prepare(`
+      SELECT 
+        c.id, c.comment, c.comment as content, c.created_at,
+        u.id as user_id, u.username, u.display_name, u.display_name as author_name, u.avatar_seed
+      FROM blog_comments c JOIN users u ON c.user_id = u.id
+      WHERE c.id = ?
+    `).get(commentId);
+
+    res.status(201).json({ comment: createdComment });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    res.status(500).json({ error: 'Failed to post comment' });
+  }
+});
+
+app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, res) => {
+  try {
+    const comment = db.prepare('SELECT * FROM blog_comments WHERE id = ? AND blog_id = ?').get(req.params.commentId, req.params.blogId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    const blog = db.prepare('SELECT author_id FROM blogs WHERE id = ?').get(req.params.blogId);
+
+    // Can delete if author of comment, owner of the blog, or admin
+    if (comment.user_id !== req.user.id && (blog && blog.author_id !== req.user.id) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to delete this comment' });
+    }
+
+    db.prepare('DELETE FROM blog_comments WHERE id = ?').run(comment.id);
+    db.prepare('UPDATE blogs SET comments_count = MAX(0, comments_count - 1) WHERE id = ?').run(req.params.blogId);
+
+    res.json({ success: true, message: 'Comment deleted' });
+  } catch (error) {
+    console.error('Delete comment error:', error);
+    res.status(500).json({ error: 'Failed to delete comment' });
   }
 });
 
@@ -201,7 +568,6 @@ app.get('/api/rooms', (req, res) => {
   try {
     const rooms = db.prepare('SELECT * FROM rooms ORDER BY created_at ASC').all();
 
-    // Attach live participant counts from activeRooms in-memory map
     const enrichedRooms = rooms.map(room => {
       const roomState = activeRooms.get(room.id);
       const onlineCount = roomState ? roomState.participants.size : 0;
@@ -235,26 +601,22 @@ app.get('/api/rooms/:id', (req, res) => {
 
 app.post('/api/rooms', authenticateToken, (req, res) => {
   try {
-    const { name, description, category, pomodoroWorkMins, pomodoroBreakMins, bgTheme, isPrivate, passcode } = req.body;
+    const { name, description, category, bgTheme, isPrivate, passcode } = req.body;
 
     if (!name || !category) {
       return res.status(400).json({ error: 'Room name and category are required' });
     }
 
     const roomId = 'room-' + crypto.randomUUID().slice(0, 8);
-    const workMins = Number(pomodoroWorkMins) || 25;
-    const breakMins = Number(pomodoroBreakMins) || 5;
 
     db.prepare(`
       INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, passcode, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
     `).run(
       roomId,
       name.trim(),
       description ? description.trim() : '',
       category.trim(),
-      workMins,
-      breakMins,
       bgTheme || 'cosmic',
       isPrivate ? 1 : 0,
       passcode ? passcode.trim() : null,
@@ -270,116 +632,97 @@ app.post('/api/rooms', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// API Routes: Study Sessions & Analytics
+// FEATURE 3: Unlimited Live Hours Leaderboard
 // ==========================================
-app.post('/api/sessions/record', authenticateToken, (req, res) => {
+app.get('/api/leaderboard', optionalAuthenticateToken, (req, res) => {
   try {
-    const { durationMinutes, mode, subject, roomId, notes } = req.body;
-    const mins = Math.max(1, Math.round(Number(durationMinutes) || 25));
-    const sessionMode = mode || 'work';
-    const subj = subject ? subject.trim() : 'General Study';
+    const { period = 'all_time' } = req.query;
+    let leaderboard = [];
 
-    const sessionId = 'sess-' + crypto.randomUUID();
-
-    // Insert session record
-    db.prepare(`
-      INSERT INTO study_sessions (id, user_id, room_id, duration_minutes, mode, subject, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(sessionId, req.user.id, roomId || null, mins, sessionMode, subj, notes || null);
-
-    // Calculate streaks & total minutes
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-
-    let newCurrentStreak = user.current_streak || 0;
-    let newLongestStreak = user.longest_streak || 0;
-
-    if (user.last_active_date) {
-      const lastDate = new Date(user.last_active_date);
-      const diffTime = Math.abs(today - lastDate);
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 0) {
-        // Same day, streak intact (ensure at least 1)
-        if (newCurrentStreak === 0) newCurrentStreak = 1;
-      } else if (diffDays === 1) {
-        // Consecutive day
-        newCurrentStreak += 1;
-      } else {
-        // Streak broken
-        newCurrentStreak = 1;
-      }
+    if (period === 'weekly') {
+      leaderboard = db.prepare(`
+        SELECT 
+          u.id, u.username, u.display_name, u.avatar_seed, u.bio, u.is_live, u.current_room_id,
+          COALESCE(SUM(s.duration_seconds), 0) as total_live_seconds
+        FROM users u
+        LEFT JOIN live_sessions s ON u.id = s.user_id AND s.started_at >= datetime('now', '-7 days')
+        GROUP BY u.id
+        ORDER BY total_live_seconds DESC, u.created_at ASC, u.username ASC
+        LIMIT 50
+      `).all();
+    } else if (period === 'monthly') {
+      leaderboard = db.prepare(`
+        SELECT 
+          u.id, u.username, u.display_name, u.avatar_seed, u.bio, u.is_live, u.current_room_id,
+          COALESCE(SUM(s.duration_seconds), 0) as total_live_seconds
+        FROM users u
+        LEFT JOIN live_sessions s ON u.id = s.user_id AND s.started_at >= datetime('now', '-30 days')
+        GROUP BY u.id
+        ORDER BY total_live_seconds DESC, u.created_at ASC, u.username ASC
+        LIMIT 50
+      `).all();
     } else {
-      newCurrentStreak = 1;
+      // Default: All-time cumulative verified live seconds
+      leaderboard = db.prepare(`
+        SELECT 
+          id, username, display_name, avatar_seed, bio, is_live, current_room_id, total_live_seconds, current_streak
+        FROM users
+        ORDER BY total_live_seconds DESC, created_at ASC, username ASC
+        LIMIT 50
+      `).all();
     }
 
-    if (newCurrentStreak > newLongestStreak) {
-      newLongestStreak = newCurrentStreak;
+    // Attach current user's rank even if outside top list
+    let currentUserRank = null;
+    if (req.user) {
+      const userIndex = leaderboard.findIndex(u => u.id === req.user.id);
+      if (userIndex !== -1) {
+        currentUserRank = {
+          rank: userIndex + 1,
+          ...leaderboard[userIndex],
+        };
+      } else {
+        const currentUserData = db.prepare('SELECT id, username, display_name, avatar_seed, bio, is_live, current_room_id, total_live_seconds FROM users WHERE id = ?').get(req.user.id);
+        if (currentUserData) {
+          const higherCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE total_live_seconds > ?').get(currentUserData.total_live_seconds).count;
+          currentUserRank = {
+            rank: higherCount + 1,
+            ...currentUserData,
+          };
+        }
+      }
     }
 
-    const newTotalMinutes = (user.total_focus_minutes || 0) + mins;
-
-    db.prepare(`
-      UPDATE users
-      SET total_focus_minutes = ?, current_streak = ?, longest_streak = ?, last_active_date = ?
-      WHERE id = ?
-    `).run(newTotalMinutes, newCurrentStreak, newLongestStreak, todayStr, req.user.id);
-
-    const updatedUser = db.prepare('SELECT id, username, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, current_streak, longest_streak, last_active_date FROM users WHERE id = ?').get(req.user.id);
-
-    res.status(201).json({
-      message: 'Study session logged successfully!',
-      sessionId,
-      session: { durationMinutes: mins, mode: sessionMode, subject: subj, completedAt: new Date().toISOString() },
-      user: updatedUser
+    res.json({
+      leaderboard,
+      currentUserRank,
+      period,
     });
   } catch (error) {
-    console.error('Session record error:', error);
-    res.status(500).json({ error: 'Failed to record study session' });
+    console.error('Leaderboard error:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
 });
 
-app.get('/api/sessions/history', authenticateToken, (req, res) => {
-  try {
-    const sessions = db.prepare(`
-      SELECT s.*, r.name as room_name 
-      FROM study_sessions s
-      LEFT JOIN rooms r ON s.room_id = r.id
-      WHERE s.user_id = ?
-      ORDER BY s.completed_at DESC
-      LIMIT 50
-    `).all(req.user.id);
-
-    res.json({ sessions });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch sessions' });
-  }
-});
-
+// Analytics Overview
 app.get('/api/analytics/overview', authenticateToken, (req, res) => {
   try {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Today's focus minutes
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todayResult = db.prepare(`
-      SELECT COALESCE(SUM(duration_minutes), 0) as today_minutes 
-      FROM study_sessions 
-      WHERE user_id = ? AND date(completed_at) = date('now')
-    `).get(req.user.id);
+    // Live hours in hours & minutes
+    const liveHoursTotal = (user.total_live_seconds / 3600).toFixed(1);
 
-    // Past 7 days activity
+    // Past 7 days live sessions
     const past7Days = db.prepare(`
-      SELECT date(completed_at) as date, COALESCE(SUM(duration_minutes), 0) as minutes
-      FROM study_sessions
-      WHERE user_id = ? AND completed_at >= datetime('now', '-7 days')
-      GROUP BY date(completed_at)
-      ORDER BY date(completed_at) ASC
+      SELECT date(started_at) as date, COALESCE(SUM(duration_seconds), 0) / 60 as minutes
+      FROM live_sessions
+      WHERE user_id = ? AND started_at >= datetime('now', '-7 days')
+      GROUP BY date(started_at)
+      ORDER BY date(started_at) ASC
     `).all(req.user.id);
 
-    // Subject breakdown
+    // Subject breakdown from historical logs
     const subjectDistribution = db.prepare(`
       SELECT subject, COALESCE(SUM(duration_minutes), 0) as minutes, COUNT(*) as count
       FROM study_sessions
@@ -389,7 +732,7 @@ app.get('/api/analytics/overview', authenticateToken, (req, res) => {
       LIMIT 6
     `).all(req.user.id);
 
-    // Tasks summary
+    // Task stats
     const taskStats = db.prepare(`
       SELECT 
         COUNT(*) as total_tasks,
@@ -399,8 +742,9 @@ app.get('/api/analytics/overview', authenticateToken, (req, res) => {
     `).get(req.user.id);
 
     res.json({
-      totalFocusMinutes: user.total_focus_minutes || 0,
-      todayMinutes: todayResult ? todayResult.today_minutes : 0,
+      totalLiveSeconds: user.total_live_seconds || 0,
+      totalLiveHours: liveHoursTotal,
+      isLive: Boolean(user.is_live),
       dailyGoalMinutes: user.daily_goal_minutes || 120,
       currentStreak: user.current_streak || 0,
       longestStreak: user.longest_streak || 0,
@@ -417,24 +761,24 @@ app.get('/api/analytics/overview', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/leaderboard', (req, res) => {
+app.get('/api/sessions/history', authenticateToken, (req, res) => {
   try {
-    const topUsers = db.prepare(`
-      SELECT id, username, display_name, avatar_seed, total_focus_minutes, current_streak, bio
-      FROM users
-      ORDER BY total_focus_minutes DESC
-      LIMIT 15
-    `).all();
+    const sessions = db.prepare(`
+      SELECT s.id, s.room_id, s.started_at as completed_at, (s.duration_seconds / 60) as duration_minutes, 'live' as mode, r.name as room_name, 'Live Study Room' as subject
+      FROM live_sessions s
+      LEFT JOIN rooms r ON s.room_id = r.id
+      WHERE s.user_id = ? AND s.duration_seconds > 0
+      ORDER BY s.started_at DESC
+      LIMIT 50
+    `).all(req.user.id);
 
-    res.json({ leaderboard: topUsers });
+    res.json({ sessions });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    res.status(500).json({ error: 'Failed to fetch sessions' });
   }
 });
 
-// ==========================================
-// API Routes: Tasks / To-Do Items
-// ==========================================
+// Tasks Endpoints
 app.get('/api/tasks', authenticateToken, (req, res) => {
   try {
     const { roomId } = req.query;
@@ -500,7 +844,7 @@ app.delete('/api/tasks/:id', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// WebSockets & Real-Time Engine (Socket.IO)
+// WebSockets & Real-Time Live Engine (Socket.IO)
 // ==========================================
 const io = new Server(server, {
   cors: {
@@ -509,50 +853,11 @@ const io = new Server(server, {
   }
 });
 
-// Timer sync ticker helper
-function handleTimerTick(roomId) {
-  const room = activeRooms.get(roomId);
-  if (!room || !room.timer.isRunning) return;
-
-  room.timer.remainingSeconds -= 1;
-
-  if (room.timer.remainingSeconds <= 0) {
-    // Switch mode
-    const completedMode = room.timer.mode;
-    const nextMode = completedMode === 'work' ? 'break' : 'work';
-    const nextTotal = (nextMode === 'work' ? room.timer.workMins : room.timer.breakMins) * 60;
-
-    room.timer.mode = nextMode;
-    room.timer.remainingSeconds = nextTotal;
-    room.timer.totalSeconds = nextTotal;
-
-    io.to(roomId).emit('timer-completed', {
-      completedMode,
-      nextMode,
-      timestamp: Date.now()
-    });
-
-    io.to(roomId).emit('timer-sync', {
-      isRunning: room.timer.isRunning,
-      mode: room.timer.mode,
-      remainingSeconds: room.timer.remainingSeconds,
-      totalSeconds: room.timer.totalSeconds
-    });
-  } else {
-    // Regular tick broadcast every 5 seconds or whenever state changed to conserve bandwidth
-    if (room.timer.remainingSeconds % 5 === 0 || room.timer.remainingSeconds < 5) {
-      io.to(roomId).emit('timer-tick', {
-        remainingSeconds: room.timer.remainingSeconds,
-        totalSeconds: room.timer.totalSeconds
-      });
-    }
-  }
-}
-
 io.on('connection', (socket) => {
   let currentRoomId = null;
   let currentUser = null;
 
+  // 1. Join Room & Start Authoritative Live Time Tracking
   socket.on('join-room', ({ roomId, user, mediaState, statusText }) => {
     currentRoomId = roomId;
     currentUser = user || {
@@ -572,24 +877,58 @@ io.on('connection', (socket) => {
       joinedAt: Date.now(),
     };
 
-    // Store participant in room
     roomState.participants.set(socket.id, participantInfo);
 
-    // Send the joining user the current list of all peers in room, timer state, and recent chat
+    // If registered user, start live session in DB
+    if (currentUser.id && !currentUser.id.startsWith('guest-')) {
+      const sessionId = 'live-' + crypto.randomUUID();
+      const nowMs = Date.now();
+
+      // Close any previous dangling session for this user
+      db.prepare(`
+        UPDATE live_sessions 
+        SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
+        WHERE user_id = ? AND is_active = 1
+      `).run(currentUser.id);
+
+      db.prepare(`
+        INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, is_active)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+      `).run(sessionId, currentUser.id, roomId, socket.id);
+
+      db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
+
+      activeLiveSessions.set(socket.id, {
+        sessionId,
+        userId: currentUser.id,
+        roomId,
+        startedAt: nowMs,
+        lastHeartbeat: nowMs,
+      });
+
+      // Acknowledge session started to client with verified start timestamp
+      socket.emit('session-live-started', {
+        sessionId,
+        startedAt: nowMs,
+        isLive: true
+      });
+
+      // Broadcast user is live globally
+      io.emit('user-live-status-changed', {
+        userId: currentUser.id,
+        isLive: true,
+        roomId
+      });
+    }
+
     const allParticipants = Array.from(roomState.participants.values());
     socket.emit('room-joined', {
       roomId,
       participants: allParticipants,
-      timer: {
-        isRunning: roomState.timer.isRunning,
-        mode: roomState.timer.mode,
-        remainingSeconds: roomState.timer.remainingSeconds,
-        totalSeconds: roomState.timer.totalSeconds,
-      },
       messages: roomState.messages,
+      sessionStartedAt: Date.now(),
     });
 
-    // Notify existing peers that a new user joined
     socket.to(roomId).emit('user-joined', {
       participant: participantInfo
     });
@@ -597,7 +936,28 @@ io.on('connection', (socket) => {
     console.log(`[Socket] ${currentUser.display_name} joined room ${roomId} (Total: ${roomState.participants.size})`);
   });
 
-  // WebRTC Signaling Relay
+  // 2. Periodic Live Session Heartbeat (Every 30s)
+  socket.on('session-heartbeat', () => {
+    if (activeLiveSessions.has(socket.id)) {
+      const session = activeLiveSessions.get(socket.id);
+      const nowMs = Date.now();
+      session.lastHeartbeat = nowMs;
+
+      db.prepare(`
+        UPDATE live_sessions 
+        SET last_heartbeat = CURRENT_TIMESTAMP 
+        WHERE id = ? AND is_active = 1
+      `).run(session.sessionId);
+
+      const elapsedSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+      socket.emit('heartbeat-ack', {
+        elapsedSeconds,
+        isLive: true
+      });
+    }
+  });
+
+  // 3. WebRTC Signaling Relay
   socket.on('signal-send', ({ to, signal, callerName, callerAvatar, mediaState }) => {
     io.to(to).emit('signal-receive', {
       from: socket.id,
@@ -608,7 +968,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Media state changes (mute, video toggle, screen share)
   socket.on('update-media-state', ({ roomId, mediaState }) => {
     const roomState = activeRooms.get(roomId);
     if (roomState && roomState.participants.has(socket.id)) {
@@ -621,7 +980,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Update Status message ("Reading chapter 3", "Coding backend")
   socket.on('update-status', ({ roomId, statusText }) => {
     const roomState = activeRooms.get(roomId);
     if (roomState && roomState.participants.has(socket.id)) {
@@ -632,55 +990,6 @@ io.on('connection', (socket) => {
         statusText
       });
     }
-  });
-
-  // Synchronized Pomodoro Timer actions
-  socket.on('timer-action', ({ roomId, action, mode, minutes }) => {
-    const roomState = getOrCreateRoomState(roomId);
-    const timer = roomState.timer;
-
-    if (action === 'start') {
-      if (!timer.isRunning) {
-        timer.isRunning = true;
-        if (!timer.timerInterval) {
-          timer.timerInterval = setInterval(() => handleTimerTick(roomId), 1000);
-        }
-      }
-    } else if (action === 'pause') {
-      timer.isRunning = false;
-      if (timer.timerInterval) {
-        clearInterval(timer.timerInterval);
-        timer.timerInterval = null;
-      }
-    } else if (action === 'reset') {
-      timer.isRunning = false;
-      if (timer.timerInterval) {
-        clearInterval(timer.timerInterval);
-        timer.timerInterval = null;
-      }
-      const dur = (timer.mode === 'work' ? timer.workMins : timer.breakMins) * 60;
-      timer.remainingSeconds = dur;
-      timer.totalSeconds = dur;
-    } else if (action === 'switch-mode') {
-      const targetMode = mode || (timer.mode === 'work' ? 'break' : 'work');
-      timer.mode = targetMode;
-      const dur = (targetMode === 'work' ? timer.workMins : timer.breakMins) * 60;
-      timer.remainingSeconds = dur;
-      timer.totalSeconds = dur;
-    } else if (action === 'set-duration') {
-      const newMins = Number(minutes) || 25;
-      if (timer.mode === 'work') timer.workMins = newMins;
-      else timer.breakMins = newMins;
-      timer.remainingSeconds = newMins * 60;
-      timer.totalSeconds = newMins * 60;
-    }
-
-    io.to(roomId).emit('timer-sync', {
-      isRunning: timer.isRunning,
-      mode: timer.mode,
-      remainingSeconds: timer.remainingSeconds,
-      totalSeconds: timer.totalSeconds
-    });
   });
 
   // Real-time Chat
@@ -704,7 +1013,7 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('new-message', message);
   });
 
-  // Floating live emoji reactions (applause, fire, coffee, star, cheer)
+  // Floating live emoji reactions
   socket.on('send-reaction', ({ roomId, emoji, senderName }) => {
     io.to(roomId).emit('reaction-received', {
       id: 'react-' + crypto.randomUUID(),
@@ -720,7 +1029,6 @@ io.on('connection', (socket) => {
     handleLeave(socket, roomId);
   });
 
-  // Socket Disconnect
   socket.on('disconnect', () => {
     if (currentRoomId) {
       handleLeave(socket, currentRoomId);
@@ -736,16 +1044,54 @@ io.on('connection', (socket) => {
         socketId: s.id,
         user: currentUser
       });
-
-      // Stop timer ticker if room is completely empty
-      if (roomState.participants.size === 0) {
-        if (roomState.timer.timerInterval) {
-          clearInterval(roomState.timer.timerInterval);
-          roomState.timer.timerInterval = null;
-          roomState.timer.isRunning = false;
-        }
-      }
     }
+
+    // Authoritative Live Session End
+    if (activeLiveSessions.has(s.id)) {
+      const session = activeLiveSessions.get(s.id);
+      const nowMs = Date.now();
+      const durationSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
+
+      db.prepare(`
+        UPDATE live_sessions 
+        SET ended_at = CURRENT_TIMESTAMP, duration_seconds = ?, is_active = 0 
+        WHERE id = ?
+      `).run(durationSeconds, session.sessionId);
+
+      if (durationSeconds > 0) {
+        db.prepare(`
+          UPDATE users 
+          SET total_live_seconds = total_live_seconds + ?, is_live = 0, current_room_id = NULL 
+          WHERE id = ?
+        `).run(durationSeconds, session.userId);
+
+        // Update streak if session was at least 60s
+        if (durationSeconds >= 60) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const userRec = db.prepare('SELECT last_active_date, current_streak, longest_streak FROM users WHERE id = ?').get(session.userId);
+          if (userRec) {
+            let nextStreak = userRec.current_streak || 1;
+            if (userRec.last_active_date) {
+              const diffDays = Math.floor(Math.abs(new Date() - new Date(userRec.last_active_date)) / (1000 * 60 * 60 * 24));
+              if (diffDays === 1) nextStreak += 1;
+              else if (diffDays > 1) nextStreak = 1;
+            }
+            const nextLongest = Math.max(userRec.longest_streak || 0, nextStreak);
+            db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
+          }
+        }
+      } else {
+        db.prepare('UPDATE users SET is_live = 0, current_room_id = NULL WHERE id = ?').run(session.userId);
+      }
+
+      activeLiveSessions.delete(s.id);
+
+      io.emit('user-live-status-changed', {
+        userId: session.userId,
+        isLive: false
+      });
+    }
+
     console.log(`[Socket] ${s.id} left room ${roomId}`);
   }
 });
@@ -755,7 +1101,7 @@ const clientDistPath = path.join(__dirname, '../client/dist');
 if (fs.existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
   app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/socket.io')) {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/socket.io') && !req.path.startsWith('/uploads')) {
       return res.sendFile(path.join(clientDistPath, 'index.html'));
     }
     next();
@@ -766,6 +1112,6 @@ const PORT = process.env.PORT || 5050;
 server.listen(PORT, () => {
   console.log(`=================================================`);
   console.log(`  StudyStream Live Server Running on port ${PORT}`);
-  console.log(`  WebRTC Signaling & Synced Pomodoro: ACTIVE     `);
+  console.log(`  Community Blogs & Unlimited Live Hours: ACTIVE `);
   console.log(`=================================================`);
 });

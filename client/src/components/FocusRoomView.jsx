@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import confetti from 'canvas-confetti';
 import { 
-  Mic, MicOff, Video, VideoOff, ScreenShare, Play, Pause, RotateCcw, 
+  Mic, MicOff, Video, VideoOff, ScreenShare, 
   MessageSquare, CheckSquare, Volume2, VolumeX, LogOut, Send, Smile, 
-  Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders
+  Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
+  Radio, Clock, ShieldCheck, Award
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -24,11 +25,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [peers, setPeers] = useState(new Map()); // socketId -> RTCPeerConnection
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream
 
-  // Synced Pomodoro Timer state
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [timerMode, setTimerMode] = useState('work'); // 'work' | 'break'
-  const [remainingSeconds, setRemainingSeconds] = useState(room.pomodoro_work_mins * 60);
-  const [totalSeconds, setTotalSeconds] = useState(room.pomodoro_work_mins * 60);
+  // Unlimited Live Hours Session tracking (No forced timeouts or limits)
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
+  const [serverVerifiedSeconds, setServerVerifiedSeconds] = useState(0);
+  const [sessionStartTime] = useState(Date.now());
+  const [isLiveActive, setIsLiveActive] = useState(true);
 
   // Status & Tasks
   const [statusText, setStatusText] = useState('Deep Work Session');
@@ -136,17 +137,17 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       statusText
     });
 
-    socket.on('room-joined', ({ participants: existingParticipants, timer, messages: initialMessages }) => {
+    socket.on('room-joined', ({ participants: existingParticipants, messages: initialMessages }) => {
       setParticipants(existingParticipants || []);
-      if (timer) {
-        setTimerRunning(timer.isRunning);
-        setTimerMode(timer.mode);
-        setRemainingSeconds(timer.remainingSeconds);
-        setTotalSeconds(timer.totalSeconds);
-      }
       if (initialMessages) {
         setMessages(initialMessages);
       }
+      // Start verified live session tracking
+      socket.emit('session-live-started', { roomId: room.id });
+    });
+
+    socket.on('heartbeat-ack', ({ verifiedLiveSeconds, totalUserLiveSeconds }) => {
+      setServerVerifiedSeconds(verifiedLiveSeconds || 0);
     });
 
     socket.on('user-joined', ({ participant }) => {
@@ -183,47 +184,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }));
     });
 
-    // Timer Sync Events
-    socket.on('timer-sync', (timerState) => {
-      setTimerRunning(timerState.isRunning);
-      setTimerMode(timerState.mode);
-      setRemainingSeconds(timerState.remainingSeconds);
-      setTotalSeconds(timerState.totalSeconds);
-    });
-
-    socket.on('timer-tick', ({ remainingSeconds: rem, totalSeconds: tot }) => {
-      setRemainingSeconds(rem);
-      if (tot) setTotalSeconds(tot);
-    });
-
-    socket.on('timer-completed', async ({ completedMode, nextMode }) => {
-      // Harmonic bell chime
-      soundSynthesizer.playChime();
-
-      // Confetti celebration
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      // Auto-record focus session to DB
-      if (completedMode === 'work' && isAuthenticated) {
-        try {
-          const finishedMinutes = Math.round(room.pomodoro_work_mins || 25);
-          await api.recordSession({
-            durationMinutes: finishedMinutes,
-            mode: 'work',
-            subject: statusText || 'StudyStream Focus Session',
-            roomId: room.id,
-          });
-          refreshUser();
-        } catch (e) {
-          console.error('Session record error:', e);
-        }
-      }
-    });
-
     // Chat Events
     socket.on('new-message', (msg) => {
       setMessages(prev => [...prev, msg]);
@@ -244,10 +204,37 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }, 2500);
     });
 
+    // Ticking stopwatch for live stream
+    const ticker = setInterval(() => {
+      setLiveElapsedSeconds(prev => {
+        const next = prev + 1;
+        // Celebrate milestones every 30 minutes of deep study
+        if (next > 0 && next % 1800 === 0) {
+          soundSynthesizer.playChime();
+          confetti({
+            particleCount: 70,
+            spread: 60,
+            origin: { y: 0.6 }
+          });
+        }
+        return next;
+      });
+    }, 1000);
+
+    // Heartbeat ping every 25 seconds for authoritative server verification
+    const heartbeatTimer = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('session-heartbeat', { roomId: room.id });
+      }
+    }, 25000);
+
     return () => {
+      clearInterval(ticker);
+      clearInterval(heartbeatTimer);
       socket.emit('leave-room', { roomId: room.id });
       socket.disconnect();
       soundSynthesizer.stopAll();
+      refreshUser();
     };
   }, [room.id]);
 
@@ -313,14 +300,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         mediaState: { screenShare: false }
       });
     }
-  };
-
-  // Timer controls
-  const handleTimerAction = (action) => {
-    socketRef.current?.emit('timer-action', {
-      roomId: room.id,
-      action
-    });
   };
 
   // Status text updater
@@ -397,14 +376,17 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
-  // Format mm:ss
-  const formatTime = (seconds) => {
-    const m = Math.floor(seconds / 60);
+  // Format hh:mm:ss or mm:ss
+  const formatLiveElapsed = (seconds) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
+    if (h > 0) {
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const timerProgress = totalSeconds > 0 ? (remainingSeconds / totalSeconds) * 100 : 0;
   const isAmbientActive = ambientVolumes.rain > 0 || ambientVolumes.cafe > 0 || ambientVolumes.binaural > 0 || ambientVolumes.fire > 0;
   const completedTasksCount = tasks.filter(t => t.completed).length;
 
@@ -420,7 +402,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             className="absolute bottom-24 flex flex-col items-center animate-float-up pointer-events-none"
           >
             <span className="text-4xl drop-shadow-lg">{r.emoji}</span>
-            <span className="text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-full border border-white/20 mt-1">
+            <span className="text-[10px] font-bold text-white bg-black/80 px-2 py-0.5 rounded-sm border border-white/20 mt-1">
               {r.senderName}
             </span>
           </div>
@@ -428,7 +410,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       </div>
 
       {/* Top Header Bar */}
-      <div className="w-full bg-[#141721]/90 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between z-30">
+      <div className="w-full bg-[#141721]/95 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-2.5 flex items-center justify-between z-30">
         
         {/* Left: Room Title, Category, Online count */}
         <div className="flex items-center space-x-3">
@@ -464,67 +446,28 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           </div>
         </div>
 
-        {/* Center: Synchronized Pomodoro Widget */}
-        <div className="flex items-center space-x-3 bg-[#1c202e] border border-white/10 px-3.5 py-1.5 rounded shadow-inner">
-          {/* Circular mini progress indicator */}
-          <div className="relative flex items-center justify-center w-7 h-7">
-            <svg className="w-7 h-7 -rotate-90">
-              <circle cx="14" cy="14" r="11" stroke="#2a2f42" strokeWidth="2.5" fill="none" />
-              <circle
-                cx="14"
-                cy="14"
-                r="11"
-                stroke={timerMode === 'work' ? '#6366f1' : '#10b981'}
-                strokeWidth="2.5"
-                fill="none"
-                strokeDasharray="69.1"
-                strokeDashoffset={69.1 - (69.1 * timerProgress) / 100}
-                strokeLinecap="round"
-                className="transition-all duration-500"
-              />
-            </svg>
+        {/* Center: Authoritative Unlimited Live Hours Stopwatch */}
+        <div className="flex items-center space-x-3 bg-[#191d2b] border border-emerald-500/30 px-3.5 py-1.5 rounded-sm shadow-md">
+          <div className="relative flex items-center justify-center">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping absolute"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           </div>
 
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-mono text-sm sm:text-base font-bold text-white tracking-wider">
-                {formatTime(remainingSeconds)}
+                {formatLiveElapsed(liveElapsedSeconds)}
               </span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider ${
-                timerMode === 'work' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
-              }`}>
-                {timerMode === 'work' ? 'FOCUS' : 'BREAK'}
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                LIVE
               </span>
             </div>
-          </div>
-
-          {/* Timer controls */}
-          <div className="flex items-center space-x-1 pl-2 border-l border-white/10">
-            {timerRunning ? (
-              <button
-                onClick={() => handleTimerAction('pause')}
-                className="p-1.5 rounded-sm text-slate-300 hover:text-amber-400 hover:bg-white/5 transition-all"
-                title="Pause Synced Timer"
-              >
-                <Pause className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <button
-                onClick={() => handleTimerAction('start')}
-                className="p-1.5 rounded-sm text-indigo-400 hover:text-indigo-300 hover:bg-white/5 transition-all"
-                title="Start Synced Timer"
-              >
-                <Play className="w-3.5 h-3.5 fill-indigo-400" />
-              </button>
-            )}
-
-            <button
-              onClick={() => handleTimerAction('reset')}
-              className="p-1.5 rounded-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-              title="Reset Timer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            <div className="text-[9px] text-slate-400 flex items-center space-x-1">
+              <ShieldCheck className="w-3 h-3 text-indigo-400 inline" />
+              <span>Unlimited Session</span>
+              <span>•</span>
+              <span className="text-emerald-400 font-semibold">Ranking Active</span>
+            </div>
           </div>
         </div>
 
