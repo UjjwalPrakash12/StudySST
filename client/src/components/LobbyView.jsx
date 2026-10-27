@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Sparkles, Plus, Search, BookOpen, Coffee, Cpu, Stethoscope, 
-  Palette, Play, Shield, Timer, Flame, CheckCircle2 
+  Palette, Play, Shield, Timer, Flame, CheckCircle2, Radio 
 } from 'lucide-react';
 import { api } from '../utils/api';
 
@@ -50,80 +50,80 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
       {/* Hero Section */}
-      <div className="relative rounded-sm overflow-hidden p-8 sm:p-12 mb-10 border border-white/10 bg-gradient-to-br from-[#141724] via-[#10131d] to-[#0c0e14]">
+      <div className="relative rounded-[16px] overflow-hidden p-8 sm:p-12 mb-10 border border-[rgba(64,56,47,0.14)] bg-[#FAEDCD] shadow-sm">
         {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-sm bg-indigo-600/20 blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-1/3 -mb-20 w-80 h-80 rounded-sm bg-pink-600/15 blur-3xl pointer-events-none"></div>
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-72 h-72 rounded-full bg-[#CCD5AE]/40 blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-1/3 -mb-16 w-72 h-72 rounded-full bg-[#E9EDC9]/50 blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-sm bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-4">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-[10px] bg-[#E9EDC9] border border-[rgba(64,56,47,0.12)] text-[#40382F] text-xs font-semibold mb-4 shadow-sm">
+            <span className="flex h-2 w-2 rounded-full bg-[#D4A373] animate-pulse"></span>
             <span>24/7 Global Unlimited Live Virtual Study Halls</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-5xl font-extrabold text-[#40382F] tracking-tight leading-tight">
             Stop studying alone. <br />
-            <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+            <span className="text-[#D4A373]">
               Stream live with scholars worldwide.
             </span>
           </h1>
 
-          <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
-            Join thousands of students and engineers staying accountable with live video study halls, 
-            unlimited session tracking, community blogs, ambient sound synthesizers, and global live-hour leaderboards.
+          <p className="mt-4 text-sm sm:text-base text-[#75695A] leading-relaxed max-w-2xl font-normal">
+            Join thousands of students and engineers staying accountable with warm live video study halls, 
+            unlimited session tracking, community blogs, ambient sound synthesizers, and verified live-hour rankings.
           </p>
 
-          <div className="mt-6 flex flex-wrap items-center gap-4">
+          <div className="mt-7 flex flex-wrap items-center gap-3">
             <button
               onClick={() => {
                 if (filteredRooms.length > 0) onJoinRoom(filteredRooms[0]);
               }}
-              className="px-6 py-3 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 flex items-center space-x-2 transition-all hover:scale-[1.02]"
+              className="px-6 py-3 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-sm shadow-sm flex items-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
-              <Play className="w-4 h-4 fill-white" />
+              <Play className="w-4 h-4 fill-[#40382F]" />
               <span>Hop into Quick Focus Room</span>
             </button>
 
             <button
               onClick={onOpenCreateRoom}
-              className="px-5 py-3 rounded-sm bg-white/5 hover:bg-white/10 text-white font-semibold text-sm border border-white/10 flex items-center space-x-2 transition-all"
+              className="px-5 py-3 rounded-[10px] bg-[#CCD5AE] hover:bg-[#BCC69B] text-[#40382F] font-semibold text-sm border border-[rgba(64,56,47,0.12)] flex items-center space-x-2 transition-all hover:scale-[1.02]"
             >
-              <Plus className="w-4 h-4 text-indigo-400" />
+              <Plus className="w-4 h-4 text-[#40382F]" />
               <span>Create Custom Study Hall</span>
             </button>
           </div>
 
           {/* Quick Metrics Bar */}
-          <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></div>
+          <div className="mt-8 pt-6 border-t border-[rgba(64,56,47,0.12)] grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+              <div className="w-2.5 h-2.5 rounded-full bg-[#D4A373] animate-ping"></div>
               <div>
-                <p className="text-slate-400">Live Active Peers</p>
-                <p className="font-bold text-white text-sm">{Math.max(totalOnline, 1)} Studying Now</p>
+                <p className="text-[#75695A] text-[11px]">Live Active Peers</p>
+                <p className="font-bold text-[#40382F] text-sm">{Math.max(totalOnline, 1)} Studying Now</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5">
-              <Timer className="w-4 h-4 text-indigo-400" />
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+              <Timer className="w-4 h-4 text-[#D4A373]" />
               <div>
-                <p className="text-slate-400">Live Hours Tracking</p>
-                <p className="font-bold text-white text-sm">Unlimited & Verified</p>
+                <p className="text-[#75695A] text-[11px]">Live Hours Tracking</p>
+                <p className="font-bold text-[#40382F] text-sm">Unlimited & Verified</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5">
-              <Flame className="w-4 h-4 text-amber-400" />
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+              <Flame className="w-4 h-4 text-[#D4A373]" />
               <div>
-                <p className="text-slate-400">Daily Streaks</p>
-                <p className="font-bold text-white text-sm">Persistent Tracking</p>
+                <p className="text-[#75695A] text-[11px]">Daily Streaks</p>
+                <p className="font-bold text-[#40382F] text-sm">Persistent Tracking</p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2.5">
-              <Shield className="w-4 h-4 text-purple-400" />
+            <div className="flex items-center space-x-2.5 bg-[#FEFAE0]/70 p-3 rounded-[12px] border border-[rgba(64,56,47,0.1)]">
+              <Shield className="w-4 h-4 text-[#75695A]" />
               <div>
-                <p className="text-slate-400">WebRTC Mesh</p>
-                <p className="font-bold text-white text-sm">Peer-to-Peer Encrypted</p>
+                <p className="text-[#75695A] text-[11px]">WebRTC Mesh</p>
+                <p className="font-bold text-[#40382F] text-sm">Peer Encrypted</p>
               </div>
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         
         {/* Categories */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
@@ -141,10 +141,10 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-3.5 py-1.5 rounded-sm text-xs font-semibold whitespace-nowrap transition-all ${
+                className={`px-4 py-2 rounded-[10px] text-xs font-semibold whitespace-nowrap transition-all border ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/5'
+                    ? 'bg-[#D4A373] text-[#40382F] border-[#D4A373] shadow-sm font-bold'
+                    : 'bg-[#FAEDCD] text-[#75695A] hover:bg-[#E9EDC9] hover:text-[#40382F] border-[rgba(64,56,47,0.12)]'
                 }`}
               >
                 {cat}
@@ -154,14 +154,14 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+        <div className="relative w-full md:w-80">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#75695A]" />
           <input
             type="text"
             placeholder="Search rooms or subjects..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#141721] border border-white/10 rounded-sm pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[10px] pl-10 pr-4 py-2.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm transition-all"
           />
         </div>
       </div>
@@ -169,15 +169,15 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
       {/* Room Grid */}
       {loading ? (
         <div className="py-20 text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="mt-3 text-xs text-slate-400 font-medium">Connecting to StudyStream rooms...</p>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#D4A373] border-t-transparent"></div>
+          <p className="mt-3 text-xs text-[#75695A] font-medium">Connecting to StudyStream rooms...</p>
         </div>
       ) : filteredRooms.length === 0 ? (
-        <div className="p-12 text-center rounded-sm bg-white/5 border border-white/10">
-          <p className="text-slate-400 text-sm">No study halls match your filter.</p>
+        <div className="p-12 text-center rounded-[16px] bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)]">
+          <p className="text-[#75695A] text-sm">No study halls match your filter.</p>
           <button
             onClick={onOpenCreateRoom}
-            className="mt-4 px-4 py-2 rounded-sm bg-indigo-600 text-white text-xs font-semibold"
+            className="mt-4 px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm"
           >
             Create this Study Hall
           </button>
@@ -188,48 +188,48 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
             return (
               <div
                 key={room.id}
-                className="group relative bg-[#141721] hover:bg-[#181b27] border border-white/10 hover:border-indigo-500/40 rounded-sm p-6 transition-all duration-200 flex flex-col justify-between hover:shadow-xl hover:shadow-indigo-950/40"
+                className="group relative bg-[#FEFAE0] hover:bg-[#FAEDCD]/70 border border-[rgba(64,56,47,0.14)] hover:border-[#D4A373]/60 rounded-[16px] p-6 transition-all duration-200 flex flex-col justify-between shadow-sm hover:shadow-md"
               >
                 <div>
                   {/* Top Badge Strip */}
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                  <div className="flex items-center justify-between mb-3.5">
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-[8px] bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.1)]">
                       {room.category}
                     </span>
-                    <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-sm bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-[8px] bg-[#E9EDC9] border border-[rgba(64,56,47,0.1)] text-[#40382F] text-[11px] font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373] animate-pulse"></span>
                       <span>{room.onlineCount || 0} online</span>
                     </div>
                   </div>
 
                   {/* Room Name */}
-                  <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition-colors">
+                  <h3 className="text-lg font-bold text-[#40382F] group-hover:text-[#D4A373] transition-colors leading-snug">
                     {room.name}
                   </h3>
 
                   {/* Description */}
-                  <p className="text-xs text-slate-400 mt-2 line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-[#75695A] mt-2 line-clamp-2 leading-relaxed font-normal">
                     {room.description || 'Join this study hall to focus alongside peers.'}
                   </p>
 
                   {/* Live Stream Details */}
-                  <div className="mt-4 flex items-center space-x-3 text-[11px] text-slate-300">
-                    <div className="flex items-center space-x-1 text-emerald-400 font-semibold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <div className="mt-4 flex items-center space-x-3 text-[11px] text-[#40382F]">
+                    <div className="flex items-center space-x-1.5 text-[#D4A373] font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373]"></span>
                       <span>Unlimited Live Streaming</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Action CTA */}
-                <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-medium">WebRTC Video & Chat</span>
+                <div className="mt-6 pt-4 border-t border-[rgba(64,56,47,0.1)] flex items-center justify-between">
+                  <span className="text-[11px] text-[#75695A] font-medium">WebRTC Video & Chat</span>
                   <button
                     onClick={() => onJoinRoom(room)}
-                    className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 flex items-center space-x-1.5 transition-all group-hover:scale-105"
+                    className="px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm flex items-center space-x-1.5 transition-all group-hover:scale-105 active:scale-95"
                   >
                     <span>Join Room</span>
-                    <Play className="w-3 h-3 fill-white" />
+                    <Play className="w-3 h-3 fill-[#40382F]" />
                   </button>
                 </div>
               </div>

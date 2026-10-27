@@ -4,32 +4,30 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class',
   theme: {
-    borderRadius: {
-      none: '0px',
-      sm: '2px',
-      DEFAULT: '2px',
-      md: '3px',
-      lg: '4px',
-      xl: '4px',
-      '2xl': '4px',
-      '3xl': '6px',
-      full: '9999px',
-    },
     extend: {
       colors: {
-        stream: {
-          dark: '#0c0e14',
-          card: '#141721',
-          surface: '#1c202e',
-          border: '#2a2f42',
-          primary: '#6366f1',
-          primaryHover: '#4f46e5',
-          accent: '#ec4899',
-          emerald: '#10b981',
-          amber: '#f59e0b',
-        }
+        sage: '#CCD5AE',
+        'soft-green': '#E9EDC9',
+        ivory: '#FEFAE0',
+        sand: '#FAEDCD',
+        terracotta: '#D4A373',
+        'terracotta-dark': '#B88252',
+        'terracotta-hover': '#C59361',
+        'text-primary': '#40382F',
+        'text-secondary': '#75695A',
+        'text-muted': '#9E9080',
+        border: 'rgba(64, 56, 47, 0.14)',
+        surface: '#FEFAE0',
+      },
+      borderRadius: {
+        card: '16px',
+        button: '10px',
+      },
+      boxShadow: {
+        warm: '0 4px 20px -2px rgba(64, 56, 47, 0.06)',
+        'warm-hover': '0 8px 30px -4px rgba(64, 56, 47, 0.12)',
+        'warm-sm': '0 2px 8px -1px rgba(64, 56, 47, 0.05)',
       },
       animation: {
         'pulse-subtle': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

@@ -33,7 +33,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0c0e14] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-screen bg-[#FEFAE0] text-[#40382F] flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Navbar (displayed everywhere except during focused immersion in FocusRoomView) */}
       {currentView !== 'room' && (
         <Navbar
@@ -86,25 +86,25 @@ function AppContent() {
 
       {/* Footer (when not inside room) */}
       {currentView !== 'room' && (
-        <footer className="border-t border-white/5 bg-[#0a0c11] py-8 text-center text-xs text-slate-400">
+        <footer className="border-t border-[rgba(64,56,47,0.14)] bg-[#FAEDCD] py-8 text-center text-xs text-[#75695A]">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-white">StudyStream Live</span>
+              <span className="font-bold text-[#40382F]">StudyStream Live</span>
               <span>— End-Term Software Engineering Project</span>
             </div>
             
-            <div className="flex items-center space-x-4 text-slate-400">
+            <div className="flex items-center space-x-3 text-[#75695A]">
               <span>WebRTC Peer Mesh</span>
               <span>•</span>
-              <span>Synchronized Pomodoro</span>
+              <span>Unlimited Live Streaming</span>
               <span>•</span>
               <span>WebAudio Synthesizer</span>
               <span>•</span>
-              <span>SQLite Persistence</span>
+              <span>Community Knowledge Hub</span>
             </div>
 
-            <div className="text-[11px] text-slate-400">
-              Built for focused students & researchers worldwide
+            <div className="text-[11px] text-[#75695A]">
+              Warm aesthetic focus community for scholars worldwide
             </div>
           </div>
         </footer>

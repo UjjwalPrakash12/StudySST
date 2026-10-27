@@ -67,16 +67,16 @@ export default function AnalyticsView({ onOpenAuth }) {
   if (!isAuthenticated) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center mx-auto mb-4 border border-indigo-500/30">
+        <div className="w-16 h-16 rounded-[16px] bg-[#FAEDCD] text-[#D4A373] flex items-center justify-center mx-auto mb-4 border border-[rgba(64,56,47,0.14)] shadow-sm">
           <BarChart3 className="w-8 h-8" />
         </div>
-        <h2 className="text-2xl font-bold text-white">Focus Analytics & Streak Tracking</h2>
-        <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
+        <h2 className="text-2xl font-bold text-[#40382F]">Focus Analytics & Streak Tracking</h2>
+        <p className="text-sm text-[#75695A] mt-2 max-w-md mx-auto font-normal">
           Sign in or launch the 1-Click Demo account to view your daily focus heatmaps, streak milestones, and session logs.
         </p>
         <button
           onClick={onOpenAuth}
-          className="mt-6 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold shadow-lg shadow-indigo-600/30"
+          className="mt-6 px-6 py-3 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-sm font-bold shadow-sm transition-all hover:scale-[1.02]"
         >
           Sign In / Quick Demo
         </button>
@@ -87,8 +87,8 @@ export default function AnalyticsView({ onOpenAuth }) {
   if (loading) {
     return (
       <div className="py-24 text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-        <p className="mt-3 text-xs text-slate-400">Loading your focus analytics...</p>
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#D4A373] border-t-transparent"></div>
+        <p className="mt-3 text-xs text-[#75695A] font-medium">Loading your focus analytics...</p>
       </div>
     );
   }
@@ -104,19 +104,19 @@ export default function AnalyticsView({ onOpenAuth }) {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#40382F] tracking-tight">
             Focus Analytics & Streaks
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-[#75695A] mt-1 font-normal">
             Tracking your deep work consistency, daily intervals, and subject distribution.
           </p>
         </div>
 
         <button
           onClick={() => setShowLogModal(true)}
-          className="px-4 py-2.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 flex items-center space-x-1.5 self-start sm:self-auto transition-all"
+          className="px-4 py-2.5 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm flex items-center space-x-1.5 self-start sm:self-auto transition-all"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 text-[#40382F]" />
           <span>Log Offline Session</span>
         </button>
       </div>
@@ -125,72 +125,72 @@ export default function AnalyticsView({ onOpenAuth }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         
         {/* Streak Card */}
-        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-5 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400">Current Streak</span>
-            <div className="p-2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Flame className="w-4 h-4 fill-amber-400" />
+            <span className="text-xs font-bold text-[#75695A]">Current Streak</span>
+            <div className="p-2 rounded-[8px] bg-[#FEFAE0] text-[#D4A373] border border-[rgba(64,56,47,0.1)]">
+              <Flame className="w-4 h-4 fill-[#D4A373]" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">{analytics?.currentStreak || 0}</span>
-            <span className="text-xs font-medium text-slate-400">consecutive days</span>
+            <span className="text-3xl font-extrabold text-[#40382F]">{analytics?.currentStreak || 0}</span>
+            <span className="text-xs font-medium text-[#75695A]">consecutive days</span>
           </div>
-          <p className="text-[11px] text-amber-400/90 mt-2">
+          <p className="text-[11px] text-[#75695A] mt-2 font-medium">
             Personal Record: {analytics?.longestStreak || 0} days
           </p>
         </div>
 
         {/* Total Hours */}
-        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-5 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400">Total Hours Focused</span>
-            <div className="p-2 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <span className="text-xs font-bold text-[#75695A]">Total Hours Focused</span>
+            <div className="p-2 rounded-[8px] bg-[#FEFAE0] text-[#D4A373] border border-[rgba(64,56,47,0.1)]">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">{totalHours}</span>
-            <span className="text-xs font-medium text-slate-400">hours</span>
+            <span className="text-3xl font-extrabold text-[#40382F]">{totalHours}</span>
+            <span className="text-xs font-medium text-[#75695A]">hours</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-2">
+          <p className="text-[11px] text-[#75695A] mt-2 font-medium">
             {analytics?.totalFocusMinutes || 0} total minutes logged
           </p>
         </div>
 
         {/* Today's Goal Progress */}
-        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-5 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400">Today's Focus Goal</span>
-            <div className="p-2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="text-xs font-bold text-[#75695A]">Today's Focus Goal</span>
+            <div className="p-2 rounded-[8px] bg-[#FEFAE0] text-[#D4A373] border border-[rgba(64,56,47,0.1)]">
               <Award className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">{todayMinutes}</span>
-            <span className="text-xs font-medium text-slate-400">/ {dailyGoalMinutes} mins</span>
+            <span className="text-3xl font-extrabold text-[#40382F]">{todayMinutes}</span>
+            <span className="text-xs font-medium text-[#75695A]">/ {dailyGoalMinutes} mins</span>
           </div>
-          <div className="w-full bg-[#1c202e] rounded-sm h-1.5 mt-3 overflow-hidden">
+          <div className="w-full bg-[#FEFAE0] rounded-full h-2 mt-3 overflow-hidden border border-[rgba(64,56,47,0.1)]">
             <div 
-              className="bg-emerald-500 h-1.5 rounded-sm transition-all duration-500" 
+              className="bg-[#D4A373] h-2 rounded-full transition-all duration-500" 
               style={{ width: `${goalPercentage}%` }}
             ></div>
           </div>
         </div>
 
         {/* Tasks Completed */}
-        <div className="bg-[#141721] border border-white/10 rounded p-5 shadow-lg relative overflow-hidden">
+        <div className="bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-5 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-400">Tasks Completed</span>
-            <div className="p-2 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <span className="text-xs font-bold text-[#75695A]">Tasks Completed</span>
+            <div className="p-2 rounded-[8px] bg-[#FEFAE0] text-[#D4A373] border border-[rgba(64,56,47,0.1)]">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">{analytics?.tasks?.completed || 0}</span>
-            <span className="text-xs font-medium text-slate-400">of {analytics?.tasks?.total || 0}</span>
+            <span className="text-3xl font-extrabold text-[#40382F]">{analytics?.tasks?.completed || 0}</span>
+            <span className="text-xs font-medium text-[#75695A]">of {analytics?.tasks?.total || 0}</span>
           </div>
-          <p className="text-[11px] text-purple-400/90 mt-2">
+          <p className="text-[11px] text-[#75695A] mt-2 font-medium">
             Accountability milestones reached
           </p>
         </div>
@@ -200,13 +200,13 @@ export default function AnalyticsView({ onOpenAuth }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         
         {/* 7-Day Bar Chart */}
-        <div className="lg:col-span-2 bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
+        <div className="lg:col-span-2 bg-[#FEFAE0] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-sm font-bold text-white">Recent Daily Focus Activity</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Minutes focused per day over past week</p>
+              <h3 className="text-sm font-bold text-[#40382F]">Recent Daily Focus Activity</h3>
+              <p className="text-[11px] text-[#75695A] mt-0.5 font-normal">Minutes focused per day over past week</p>
             </div>
-            <TrendingUp className="w-4 h-4 text-indigo-400" />
+            <TrendingUp className="w-4 h-4 text-[#D4A373]" />
           </div>
 
           <div className="h-48 flex items-end justify-between gap-2 pt-6 px-2">
@@ -218,35 +218,35 @@ export default function AnalyticsView({ onOpenAuth }) {
 
                 return (
                   <div key={idx} className="flex-1 flex flex-col items-center gap-2 group">
-                    <span className="text-[10px] font-mono font-semibold text-indigo-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] font-mono font-bold text-[#D4A373] opacity-0 group-hover:opacity-100 transition-opacity">
                       {item.minutes}m
                     </span>
-                    <div className="w-full max-w-[40px] bg-[#1c202e] rounded-t-sm h-36 flex items-end overflow-hidden">
+                    <div className="w-full max-w-[40px] bg-[#FAEDCD] rounded-t-[8px] h-36 flex items-end overflow-hidden border border-[rgba(64,56,47,0.1)]">
                       <div
                         style={{ height: `${heightPercent}%` }}
-                        className="w-full bg-gradient-to-t from-indigo-600 to-pink-500 rounded-t-sm transition-all duration-500 group-hover:brightness-110"
+                        className="w-full bg-[#D4A373] hover:bg-[#C59361] rounded-t-[6px] transition-all duration-500"
                       ></div>
                     </div>
-                    <span className="text-[11px] text-slate-400 font-medium">{dayLabel}</span>
+                    <span className="text-[11px] text-[#75695A] font-medium">{dayLabel}</span>
                   </div>
                 );
               })
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                Complete your first Pomodoro session to see your weekly chart!
+              <div className="w-full h-full flex items-center justify-center text-xs text-[#75695A]">
+                Complete your first session to see your weekly chart!
               </div>
             )}
           </div>
         </div>
 
         {/* Subjects Breakdown */}
-        <div className="bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
+        <div className="bg-[#FEFAE0] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-sm font-bold text-white">Subject Breakdown</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Top subjects by focus time</p>
+              <h3 className="text-sm font-bold text-[#40382F]">Subject Breakdown</h3>
+              <p className="text-[11px] text-[#75695A] mt-0.5 font-normal">Top subjects by focus time</p>
             </div>
-            <BookOpen className="w-4 h-4 text-pink-400" />
+            <BookOpen className="w-4 h-4 text-[#D4A373]" />
           </div>
 
           <div className="space-y-4">
@@ -258,12 +258,12 @@ export default function AnalyticsView({ onOpenAuth }) {
                 return (
                   <div key={idx}>
                     <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="font-semibold text-slate-200 truncate pr-2">{sub.subject}</span>
-                      <span className="text-slate-400 font-mono">{sub.minutes} mins ({percent}%)</span>
+                      <span className="font-bold text-[#40382F] truncate pr-2">{sub.subject}</span>
+                      <span className="text-[#75695A] font-mono font-medium">{sub.minutes} mins ({percent}%)</span>
                     </div>
-                    <div className="w-full bg-[#1c202e] rounded-sm h-1.5 overflow-hidden">
+                    <div className="w-full bg-[#FAEDCD] rounded-full h-2 overflow-hidden border border-[rgba(64,56,47,0.1)]">
                       <div
-                        className="bg-indigo-500 h-1.5 rounded-sm"
+                        className="bg-[#D4A373] h-2 rounded-full"
                         style={{ width: `${percent}%` }}
                       ></div>
                     </div>
@@ -271,7 +271,7 @@ export default function AnalyticsView({ onOpenAuth }) {
                 );
               })
             ) : (
-              <p className="text-xs text-slate-400 text-center py-8">
+              <p className="text-xs text-[#75695A] text-center py-8">
                 No subjects recorded yet. Set your goal when entering a focus room!
               </p>
             )}
@@ -280,35 +280,35 @@ export default function AnalyticsView({ onOpenAuth }) {
       </div>
 
       {/* Past Sessions Log Table */}
-      <div className="bg-[#141721] border border-white/10 rounded p-6 shadow-lg">
-        <h3 className="text-sm font-bold text-white mb-4">Focus Session History</h3>
+      <div className="bg-[#FEFAE0] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-6 shadow-sm">
+        <h3 className="text-sm font-bold text-[#40382F] mb-4">Focus Session History</h3>
         
         {sessions.length === 0 ? (
-          <p className="text-xs text-slate-400 text-center py-6">No study sessions logged yet.</p>
+          <p className="text-xs text-[#75695A] text-center py-6">No study sessions logged yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-white/10 text-slate-400">
-                  <th className="pb-3 font-semibold">Subject / Goal</th>
+                <tr className="border-b border-[rgba(64,56,47,0.14)] text-[#75695A]">
+                  <th className="pb-3 font-semibold pl-2">Subject / Goal</th>
                   <th className="pb-3 font-semibold">Study Hall</th>
                   <th className="pb-3 font-semibold">Duration</th>
                   <th className="pb-3 font-semibold">Mode</th>
-                  <th className="pb-3 font-semibold text-right">Completed Date</th>
+                  <th className="pb-3 font-semibold text-right pr-2">Completed Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-[rgba(64,56,47,0.08)]">
                 {sessions.map(s => (
-                  <tr key={s.id} className="hover:bg-white/5 transition-colors">
-                    <td className="py-3 font-medium text-white">{s.subject}</td>
-                    <td className="py-3 text-slate-300">{s.room_name || 'Personal Focus'}</td>
-                    <td className="py-3 font-mono font-semibold text-indigo-400">{s.duration_minutes} mins</td>
+                  <tr key={s.id} className="hover:bg-[#FAEDCD]/50 transition-colors">
+                    <td className="py-3 pl-2 font-bold text-[#40382F]">{s.subject}</td>
+                    <td className="py-3 text-[#75695A]">{s.room_name || 'Personal Focus'}</td>
+                    <td className="py-3 font-mono font-bold text-[#D4A373]">{s.duration_minutes} mins</td>
                     <td className="py-3">
-                      <span className="px-2 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold uppercase">
+                      <span className="px-2 py-0.5 rounded-[6px] bg-[#E9EDC9] text-[#40382F] text-[10px] font-bold uppercase border border-[rgba(64,56,47,0.1)]">
                         {s.mode}
                       </span>
                     </td>
-                    <td className="py-3 text-right text-slate-400">
+                    <td className="py-3 text-right pr-2 text-[#75695A]">
                       {new Date(s.completed_at).toLocaleDateString()} {new Date(s.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                   </tr>
@@ -321,32 +321,32 @@ export default function AnalyticsView({ onOpenAuth }) {
 
       {/* Manual Session Log Modal */}
       {showLogModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-sm bg-[#141721] border border-white/10 rounded p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-2">Log Offline Study Session</h3>
-            <p className="text-xs text-slate-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#40382F]/50 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-sm bg-[#FEFAE0] border border-[rgba(64,56,47,0.14)] rounded-[16px] p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-[#40382F] mb-2">Log Offline Study Session</h3>
+            <p className="text-xs text-[#75695A] mb-4 font-normal">
               Studied away from the computer? Log your reading or textbook hours to maintain your streak!
             </p>
 
             <form onSubmit={handleManualLog} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Subject / Topic</label>
+                <label className="block text-xs font-bold text-[#40382F] mb-1.5">Subject / Topic</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Distributed Database Consistency Models"
                   value={logSubject}
                   onChange={(e) => setLogSubject(e.target.value)}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[10px] px-4 py-2.5 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Duration (Minutes)</label>
+                <label className="block text-xs font-bold text-[#40382F] mb-1.5">Duration (Minutes)</label>
                 <select
                   value={logMins}
                   onChange={(e) => setLogMins(Number(e.target.value))}
-                  className="w-full bg-[#1c202e] border border-white/10 rounded-sm px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#FAEDCD] border border-[rgba(64,56,47,0.14)] rounded-[10px] px-3 py-2.5 text-xs text-[#40382F] focus:outline-none focus:border-[#D4A373] focus:ring-1 focus:ring-[#D4A373] shadow-sm"
                 >
                   <option value={25}>25 Minutes (1 Pomodoro)</option>
                   <option value={50}>50 Minutes (2 Pomodoros)</option>
@@ -360,14 +360,14 @@ export default function AnalyticsView({ onOpenAuth }) {
                 <button
                   type="button"
                   onClick={() => setShowLogModal(false)}
-                  className="px-4 py-2 rounded-sm text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2 rounded-[10px] text-xs font-semibold text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingLog}
-                  className="px-4 py-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-[10px] bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold shadow-sm"
                 >
                   {submittingLog ? 'Saving...' : 'Save & Update Streak'}
                 </button>
