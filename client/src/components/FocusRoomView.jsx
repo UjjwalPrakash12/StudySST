@@ -118,12 +118,28 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         : 'border-[rgba(64,56,47,0.2)]'
     }`}>
       {/* Remote audio playback */}
-      {!livekitTrack && <audio ref={audioRef} autoPlay playsInline />}
+      {!livekitTrack && (
+        <audio
+          ref={(el) => {
+            audioRef.current = el;
+            if (el && stream && peer.mediaState?.mic && el.srcObject !== stream) {
+              el.srcObject = stream;
+            }
+          }}
+          autoPlay
+          playsInline
+        />
+      )}
 
       {/* Video display or Avatar placeholder */}
       {hasVideo ? (
         <video
-          ref={videoRef}
+          ref={(el) => {
+            videoRef.current = el;
+            if (el && !livekitTrack && stream && peer.mediaState?.video && el.srcObject !== stream) {
+              el.srcObject = stream;
+            }
+          }}
           autoPlay
           playsInline
           className="w-full h-full object-cover"
@@ -300,6 +316,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const wasMutedBeforePttRef = useRef(false);
   const isSpeakingLocalRef = useRef(false);
   const sessionStartedAtRef = useRef(null);
+  const iceCandidatesQueueRef = useRef(new Map()); // socketId -> candidate[]
 
   useEffect(() => {
     activeDmRecipientRef.current = activeDmRecipient;
@@ -412,14 +429,31 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
 
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        setRemoteStreams(prev => {
-          const next = new Map(prev);
-          next.set(targetSocketId, remoteStream);
-          return next;
-        });
-      }
+      setRemoteStreams(prev => {
+        const next = new Map(prev);
+        let stream = next.get(targetSocketId);
+        if (!stream) {
+          stream = new MediaStream();
+        } else {
+          // Clone tracks into fresh MediaStream reference so React state recognizes the update
+          stream = new MediaStream(stream.getTracks());
+        }
+
+        if (event.streams && event.streams[0]) {
+          event.streams[0].getTracks().forEach(track => {
+            if (!stream.getTracks().some(t => t.id === track.id)) {
+              stream.addTrack(track);
+            }
+          });
+        } else if (event.track) {
+          if (!stream.getTracks().some(t => t.id === event.track.id)) {
+            stream.addTrack(event.track);
+          }
+        }
+
+        next.set(targetSocketId, stream);
+        return next;
+      });
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -433,6 +467,20 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
 
     return pc;
+  };
+
+  const flushQueuedIceCandidates = async (targetSocketId, pc) => {
+    const queue = iceCandidatesQueueRef.current.get(targetSocketId);
+    if (queue && queue.length > 0) {
+      for (const cand of queue) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('Error flushing queued ICE candidate:', e);
+        }
+      }
+      iceCandidatesQueueRef.current.delete(targetSocketId);
+    }
   };
 
   // Authoritative hardware track termination
@@ -478,8 +526,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       try { pc.close(); } catch (e) {}
     });
     peerConnectionsRef.current.clear();
+    iceCandidatesQueueRef.current.clear();
     setLocalStream(null);
-    setScreenSharing(false);
   };
 
   const handleLeaveRoom = () => {
@@ -547,6 +595,26 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
           }
+
+          // Attach newly acquired camera track to all existing active peer connections
+          const newVideoTrack = stream.getVideoTracks()[0];
+          if (newVideoTrack) {
+            peerConnectionsRef.current.forEach(pc => {
+              const senders = pc.getSenders();
+              const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+              if (videoSender) {
+                videoSender.replaceTrack(newVideoTrack).catch(() => {});
+              } else {
+                try { pc.addTrack(newVideoTrack, stream); } catch (e) {}
+              }
+            });
+          }
+
+          if (livekitRoomRef.current && livekitRoomRef.current.localParticipant) {
+            try {
+              livekitRoomRef.current.localParticipant.setCameraEnabled(true).catch(() => {});
+            } catch (e) {}
+          }
         } else {
           stream.getTracks().forEach(t => t.stop());
         }
@@ -557,6 +625,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           localStreamRef.current = null;
           setVideoActive(false);
           setMicActive(false);
+          socketRef.current?.emit('update-media-state', {
+            roomId: room.id,
+            mediaState: { video: false }
+          });
         }
       }
     }
@@ -627,6 +699,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           await lkRoom.connect(res.url, res.token);
           setSfuActive(true);
           console.log('[LiveKit SFU] Successfully connected with Dynacast and Simulcast enabled!');
+
+          if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
+            try {
+              await lkRoom.localParticipant.setCameraEnabled(true);
+            } catch (e) {
+              console.warn('LiveKit enable initial camera error:', e);
+            }
+          }
         }
       } catch (sfuErr) {
         console.warn('[LiveKit SFU] Running in adaptive WebRTC mesh fallback mode:', sfuErr.message);
@@ -754,6 +834,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       try {
         const pc = createPeerConnection(originSocketId);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await flushQueuedIceCandidates(originSocketId, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('webrtc-answer', {
@@ -773,6 +854,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         const pc = peerConnectionsRef.current.get(originSocketId);
         if (pc) {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushQueuedIceCandidates(originSocketId, pc);
         }
       } catch (err) {
         console.warn('Error setting remote description from answer:', err);
@@ -781,11 +863,16 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
     socket.on('webrtc-ice-candidate', async ({ senderSocketId, from, candidate }) => {
       const originSocketId = senderSocketId || from;
-      if (!originSocketId) return;
+      if (!originSocketId || !candidate) return;
       try {
         const pc = peerConnectionsRef.current.get(originSocketId);
-        if (pc && candidate) {
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          // Buffer candidate until remote description is set
+          const queue = iceCandidatesQueueRef.current.get(originSocketId) || [];
+          queue.push(candidate);
+          iceCandidatesQueueRef.current.set(originSocketId, queue);
         }
       } catch (err) {
         console.warn('Error adding ICE candidate:', err);
@@ -1819,7 +1906,12 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               }`}>
                 {localStream && videoActive ? (
                   <video
-                    ref={localVideoRef}
+                    ref={(el) => {
+                      localVideoRef.current = el;
+                      if (el && localStream && el.srcObject !== localStream) {
+                        el.srcObject = localStream;
+                      }
+                    }}
                     autoPlay
                     playsInline
                     muted
