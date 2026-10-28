@@ -3425,18 +3425,56 @@ io.on('connection', (socket) => {
     try {
       const decoded = jwt.verify(authToken, JWT_SECRET);
       if (decoded && decoded.id) {
-        currentUser = {
-          id: decoded.id,
-          username: decoded.username,
-          email: decoded.email,
-          display_name: decoded.displayName || decoded.display_name || decoded.username,
-          avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
-        };
-        isAuthenticatedUser = true;
+        const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, role FROM users WHERE id = ?').get(decoded.id);
+        if (dbUser) {
+          currentUser = dbUser;
+          currentUser.isSuperAdmin = isSuperAdminEmail(dbUser.email);
+          isAuthenticatedUser = true;
+        }
       }
     } catch (e) {}
   }
   socket.isAuthenticatedUser = isAuthenticatedUser;
+  socket.currentUser = currentUser;
+
+  // Runtime socket upgrade/authentication event
+  socket.on('authenticate-socket', ({ token }) => {
+    if (!token) return;
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded && decoded.id) {
+        const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, role FROM users WHERE id = ?').get(decoded.id);
+        if (dbUser) {
+          currentUser = dbUser;
+          currentUser.isSuperAdmin = isSuperAdminEmail(dbUser.email);
+          isAuthenticatedUser = true;
+          socket.isAuthenticatedUser = true;
+          socket.currentUser = currentUser;
+
+          // If socket is in a room, promote participant from guest to authenticated user
+          if (currentRoomId) {
+            const roomState = activeRooms.get(currentRoomId);
+            if (roomState && roomState.participants.has(socket.id)) {
+              const p = roomState.participants.get(socket.id);
+              p.user = currentUser;
+              delete p.user.isGuest;
+              socket.to(currentRoomId).emit('peer-info-updated', {
+                socketId: socket.id,
+                user: currentUser
+              });
+            }
+          }
+
+          socket.emit('socket-authenticated', {
+            success: true,
+            user: currentUser
+          });
+        }
+      }
+    } catch (err) {
+      socket.emit('socket-auth-error', { error: 'Invalid or expired token' });
+    }
+  });
 
   // Immediately send initial presence stats to newly connected socket
   socket.emit('presence-stats', getPresenceStats());
@@ -3489,40 +3527,30 @@ io.on('connection', (socket) => {
       handleLeave(socket, currentRoomId);
     }
 
-    // Check if token was provided in auth, payload, or user object
-    const candidateAuthToken = socket.handshake?.auth?.token || (user && (user.token || user.authToken));
+    // Strictly verify auth token from handshake auth, query, or payload
+    const candidateAuthToken = socket.handshake?.auth?.token || socket.handshake?.query?.token || (user && (user.token || user.authToken));
     if (!isAuthenticatedUser && candidateAuthToken) {
       try {
         const decoded = jwt.verify(candidateAuthToken, JWT_SECRET);
         if (decoded && decoded.id) {
-          currentUser = {
-            id: decoded.id,
-            username: decoded.username,
-            email: decoded.email,
-            display_name: decoded.displayName || decoded.display_name || decoded.username,
-            avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
-          };
-          isAuthenticatedUser = true;
-          socket.isAuthenticatedUser = true;
+          const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, role FROM users WHERE id = ?').get(decoded.id);
+          if (dbUser) {
+            currentUser = dbUser;
+            currentUser.isSuperAdmin = isSuperAdminEmail(dbUser.email);
+            isAuthenticatedUser = true;
+            socket.isAuthenticatedUser = true;
+            socket.currentUser = currentUser;
+          }
         }
       } catch (e) {}
     }
 
-    // Also support registered user object by ID lookup
-    if (!isAuthenticatedUser && user && user.id && !user.id.startsWith('guest-')) {
-      const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed FROM users WHERE id = ?').get(user.id);
-      if (dbUser) {
-        currentUser = dbUser;
-        isAuthenticatedUser = true;
-        socket.isAuthenticatedUser = true;
-      }
-    }
-
     if (isAuthenticatedUser && currentUser) {
-      if (user && user.display_name) {
-        currentUser.display_name = user.display_name;
+      if (user && user.display_name && user.display_name.trim()) {
+        currentUser.display_name = user.display_name.trim().slice(0, 50);
       }
     } else {
+      // Ephemeral guest identity: strictly socket-based, no database account
       currentUser = {
         id: 'guest-' + socket.id.slice(0, 5),
         display_name: 'Guest ' + socket.id.slice(0, 4),
@@ -3531,6 +3559,8 @@ io.on('connection', (socket) => {
       };
       // GUESTS MUST NEVER HAVE MIC OR VIDEO ACTIVE
       mediaState = { mic: false, video: false };
+      isAuthenticatedUser = false;
+      socket.isAuthenticatedUser = false;
     }
 
     // Check if room is private / password protected
@@ -3823,9 +3853,29 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('update-media-state', ({ roomId, mediaState }) => {
+  socket.on('update-media-state', ({ roomId, mediaState, authToken }) => {
+    // If not authenticated yet, check if token was supplied with the request or in handshake
+    if (!isAuthenticatedUser) {
+      const candidate = authToken || socket.handshake?.auth?.token || socket.handshake?.query?.token;
+      if (candidate) {
+        try {
+          const decoded = jwt.verify(candidate, JWT_SECRET);
+          if (decoded && decoded.id) {
+            const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, role FROM users WHERE id = ?').get(decoded.id);
+            if (dbUser) {
+              currentUser = dbUser;
+              currentUser.isSuperAdmin = isSuperAdminEmail(dbUser.email);
+              isAuthenticatedUser = true;
+              socket.isAuthenticatedUser = true;
+              socket.currentUser = currentUser;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
     if (!isAuthenticatedUser && (mediaState?.video || mediaState?.mic)) {
-      socket.emit('media-denied', { error: 'Authentication required to use camera or microphone' });
+      socket.emit('media-denied', { error: 'Authentication required to use camera or microphone', isGuest: true });
       return;
     }
     const roomState = activeRooms.get(roomId);

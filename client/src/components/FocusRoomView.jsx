@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import confetti from 'canvas-confetti';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { 
   Room as LivekitRoom, 
   RoomEvent, 
@@ -254,10 +255,12 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
 }
 
 export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenProfile }) {
-  const { user, isAuthenticated, refreshUser } = useAuth();
+  const { user, isAuthenticated, loading, refreshUser } = useAuth();
   
   // Media state
   const [localStream, setLocalStream] = useState(null);
+  const [mediaErrorMessage, setMediaErrorMessage] = useState(null);
+  const guestPromptDismissedRef = useRef(false);
   const [micActive, setMicActive] = useState(false);
   const [videoActive, setVideoActive] = useState(() => Boolean(isAuthenticated));
   const [participants, setParticipants] = useState([]);
@@ -287,6 +290,9 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [showChatEmojiPicker, setShowChatEmojiPicker] = useState(false);
+  const chatEmojiPickerRef = useRef(null);
+  const chatInputRef = useRef(null);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [isReactionMenuOpen, setIsReactionMenuOpen] = useState(false);
   const [selectedReactionCategory, setSelectedReactionCategory] = useState('Positive');
@@ -303,11 +309,77 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   const [conversationsMap, setConversationsMap] = useState({}); // recipientId/socketId -> dmRecord[]
   const [isDmCollapsed, setIsDmCollapsed] = useState(false);
   const [dmInput, setDmInput] = useState('');
+  const [showDmEmojiPicker, setShowDmEmojiPicker] = useState(false);
+  const dmEmojiPickerRef = useRef(null);
+  const dmInputRef = useRef(null);
   const [unreadDms, setUnreadDms] = useState({}); // userId -> count
   const activeDmRecipientRef = useRef(null);
   const activeDrawerRef = useRef(null);
   const isChatCollapsedRef = useRef(false);
   const isDmCollapsedRef = useRef(false);
+
+  // Close emoji pickers on outside click or Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowChatEmojiPicker(false);
+        setShowDmEmojiPicker(false);
+      }
+    };
+    const handleClickOutside = (e) => {
+      if (chatEmojiPickerRef.current && !chatEmojiPickerRef.current.contains(e.target)) {
+        setShowChatEmojiPicker(false);
+      }
+      if (dmEmojiPickerRef.current && !dmEmojiPickerRef.current.contains(e.target)) {
+        setShowDmEmojiPicker(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Standard Unicode emoji insertion at cursor position with preserved draft
+  const handleChatEmojiClick = (emojiData) => {
+    const emoji = emojiData?.emoji;
+    if (!emoji) return;
+    const input = chatInputRef.current;
+    if (!input) {
+      setChatInput(prev => prev + emoji);
+      return;
+    }
+    const start = input.selectionStart ?? chatInput.length;
+    const end = input.selectionEnd ?? chatInput.length;
+    const nextVal = chatInput.substring(0, start) + emoji + chatInput.substring(end);
+    setChatInput(nextVal);
+    setTimeout(() => {
+      input.focus();
+      const pos = start + emoji.length;
+      input.setSelectionRange(pos, pos);
+    }, 0);
+  };
+
+  const handleDmEmojiClick = (emojiData) => {
+    const emoji = emojiData?.emoji;
+    if (!emoji) return;
+    const input = dmInputRef.current;
+    if (!input) {
+      setDmInput(prev => prev + emoji);
+      return;
+    }
+    const start = input.selectionStart ?? dmInput.length;
+    const end = input.selectionEnd ?? dmInput.length;
+    const nextVal = dmInput.substring(0, start) + emoji + dmInput.substring(end);
+    setDmInput(nextVal);
+    setTimeout(() => {
+      input.focus();
+      const pos = start + emoji.length;
+      input.setSelectionRange(pos, pos);
+    }, 0);
+  };
 
   // Helper to determine whether chat or DM message container is scrolled near bottom
   const isNearBottom = (element, threshold = 90) => {
@@ -888,16 +960,18 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
     });
     socketRef.current = socket;
 
-    const currentUserData = user || {
+    const currentUserData = user ? { ...user, token } : (token ? { token } : {
       id: 'guest-' + Math.random().toString(36).slice(2, 7),
       display_name: 'Guest ' + Math.floor(Math.random() * 1000),
-      avatar_seed: 'Guest'
-    };
+      avatar_seed: 'Guest',
+      isGuest: true
+    });
 
     socket.emit('join-room', {
       roomId: room.id,
       user: currentUserData,
-      mediaState: { mic: false, video: isAuthenticated ? videoActive : false },
+      authToken: token,
+      mediaState: { mic: false, video: (isAuthenticated || Boolean(token)) ? videoActive : false },
       statusText,
       spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null,
       roomToken: room.roomToken || null
@@ -931,15 +1005,47 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       stopAllMediaTracks();
       setVideoActive(false);
       setMicActive(false);
-      onOpenAuth?.();
+      const currentToken = localStorage.getItem('studystream_token');
+      if (currentToken) {
+        socket.emit('authenticate-socket', { token: currentToken });
+      } else {
+        if (!guestPromptDismissedRef.current) {
+          onOpenAuth?.();
+        }
+      }
     });
 
     socket.on('chat-denied', ({ error }) => {
-      onOpenAuth?.();
+      const currentToken = localStorage.getItem('studystream_token');
+      if (currentToken) {
+        socket.emit('authenticate-socket', { token: currentToken });
+      } else {
+        if (!guestPromptDismissedRef.current) {
+          onOpenAuth?.();
+        }
+      }
     });
 
     socket.on('direct-message-denied', ({ error }) => {
-      onOpenAuth?.();
+      const currentToken = localStorage.getItem('studystream_token');
+      if (currentToken) {
+        socket.emit('authenticate-socket', { token: currentToken });
+      } else {
+        if (!guestPromptDismissedRef.current) {
+          onOpenAuth?.();
+        }
+      }
+    });
+
+    socket.on('socket-authenticated', ({ user: authUser }) => {
+      if (authUser) {
+        setParticipants(prev => prev.map(p => {
+          if (p.socketId === socket.id) {
+            return { ...p, user: authUser };
+          }
+          return p;
+        }));
+      }
     });
 
     socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages, sessionStartedAt, elapsedSeconds }) => {
@@ -1266,6 +1372,14 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
     };
   }, [room.id, sfuActive]);
 
+  // Sync runtime socket authentication whenever user or token changes
+  useEffect(() => {
+    const token = localStorage.getItem('studystream_token');
+    if (token && socketRef.current) {
+      socketRef.current.emit('authenticate-socket', { token });
+    }
+  }, [user, isAuthenticated]);
+
   // Explicitly acquire and unmute microphone ONLY on user action
   const unmuteMic = async () => {
     try {
@@ -1319,13 +1433,22 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
 
         socketRef.current?.emit('update-media-state', {
           roomId: room.id,
-          mediaState: { mic: true }
+          mediaState: { mic: true },
+          authToken: localStorage.getItem('studystream_token')
         });
       }
     } catch (err) {
       console.warn('Microphone permission denied or device unavailable:', err);
       setMicActive(false);
-      alert('Microphone access denied or unavailable. Please check your browser microphone permissions.');
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMediaErrorMessage('Microphone access was blocked by your browser settings. Please click the lock or microphone icon in your browser URL bar to allow microphone access.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setMediaErrorMessage('No microphone device was detected on your computer.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setMediaErrorMessage('Microphone is currently in use by another application or browser tab.');
+      } else {
+        setMediaErrorMessage(err.message || 'Microphone device is unavailable. Please check your browser audio settings.');
+      }
     }
   };
 
@@ -1396,10 +1519,17 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   };
 
   const toggleMic = () => {
-    if (!isAuthenticated) {
-      onOpenAuth?.();
+    const token = localStorage.getItem('studystream_token');
+    if (loading && token) {
+      return; // Auth session is initializing/restoring; do not trigger sign-in prompt
+    }
+    if (!isAuthenticated && !token) {
+      if (!guestPromptDismissedRef.current) {
+        onOpenAuth?.();
+      }
       return;
     }
+    setMediaErrorMessage(null);
     if (micActive) {
       muteMic();
     } else {
@@ -1411,10 +1541,17 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   };
 
   const toggleVideo = async () => {
-    if (!isAuthenticated) {
-      onOpenAuth?.();
+    const token = localStorage.getItem('studystream_token');
+    if (loading && token) {
+      return; // Auth session is initializing/restoring; do not trigger sign-in prompt
+    }
+    if (!isAuthenticated && !token) {
+      if (!guestPromptDismissedRef.current) {
+        onOpenAuth?.();
+      }
       return;
     }
+    setMediaErrorMessage(null);
     if (videoActive) {
       // 1. Physically stop all local camera video tracks so the camera hardware and OS indicator turn completely OFF
       if (localStreamRef.current) {
@@ -1461,7 +1598,8 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       // 6. Broadcast camera OFF state to all peers
       socketRef.current?.emit('update-media-state', {
         roomId: room.id,
-        mediaState: { video: false }
+        mediaState: { video: false },
+        authToken: localStorage.getItem('studystream_token')
       });
     } else {
       // Re-acquire hardware camera track
@@ -1519,13 +1657,22 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
 
           socketRef.current?.emit('update-media-state', {
             roomId: room.id,
-            mediaState: { video: true }
+            mediaState: { video: true },
+            authToken: localStorage.getItem('studystream_token')
           });
         }
       } catch (err) {
         console.warn('Camera restart failed or permission denied:', err);
         setVideoActive(false);
-        alert('Camera access denied or unavailable. Please check your browser camera permissions.');
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setMediaErrorMessage('Camera access was blocked by your browser settings. Please click the lock or camera icon in your browser URL bar to allow camera access.');
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setMediaErrorMessage('No camera device was detected on your computer.');
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          setMediaErrorMessage('Camera is currently in use by another application or browser tab.');
+        } else {
+          setMediaErrorMessage(err.message || 'Camera device is unavailable. Please check your browser camera settings.');
+        }
       }
     }
   };
@@ -1702,8 +1849,11 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
 
   const handleSendDm = (e) => {
     e.preventDefault();
+    setShowDmEmojiPicker(false);
     if (!isAuthenticated) {
-      onOpenAuth?.();
+      if (!guestPromptDismissedRef.current) {
+        onOpenAuth?.();
+      }
       return;
     }
     if (!dmInput.trim() || !activeDmRecipient) return;
@@ -1805,8 +1955,11 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
 
   const handleSendMessage = (e) => {
     e.preventDefault();
+    setShowChatEmojiPicker(false);
     if (!isAuthenticated) {
-      onOpenAuth?.();
+      if (!guestPromptDismissedRef.current) {
+        onOpenAuth?.();
+      }
       return;
     }
     if (!chatInput.trim()) return;
@@ -2180,6 +2333,23 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
         
         {/* Video Tiles Grid & Pagination Controls */}
         <div className="flex-1 p-4 sm:p-5 overflow-y-auto flex flex-col justify-between">
+          
+          {/* Hardware Permission / Device Notice Banner */}
+          {mediaErrorMessage && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-300 text-amber-900 flex items-center justify-between text-xs max-w-7xl mx-auto w-full animate-fadeIn shadow-sm">
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-amber-800">⚠️ Hardware Notice:</span>
+                <span>{mediaErrorMessage}</span>
+              </div>
+              <button
+                onClick={() => setMediaErrorMessage(null)}
+                className="p-1 hover:bg-amber-100 text-amber-800 font-bold ml-2"
+                title="Dismiss message"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           
           {/* Pagination Strip (Active when participants > 8) */}
           {totalPages > 1 && (
@@ -2801,27 +2971,54 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                   )}
                 </div>
 
-                <form onSubmit={handleSendMessage} className="pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
-                  <div className="flex items-center space-x-2">
+                <form onSubmit={handleSendMessage} className="relative pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
+                  {showChatEmojiPicker && (
+                    <div ref={chatEmojiPickerRef} className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl border border-[rgba(64,56,47,0.2)] bg-[#FEFAE0]">
+                      <EmojiPicker
+                        onEmojiClick={handleChatEmojiClick}
+                        theme={Theme.LIGHT}
+                        width={290}
+                        height={360}
+                        searchPlaceHolder="Search emojis..."
+                        previewConfig={{ showPreview: false }}
+                        lazyLoadEmojis={true}
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center space-x-1.5">
                     <input
+                      ref={chatInputRef}
                       type="text"
                       placeholder={isAuthenticated ? "Send a quiet encouragement..." : "Sign in to send encouragement in chat..."}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onClick={() => {
-                        if (!isAuthenticated) onOpenAuth?.();
+                        if (!isAuthenticated && !guestPromptDismissedRef.current) {
+                          onOpenAuth?.();
+                        }
                       }}
                       className="flex-1 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-2 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
                     />
                     <button
+                      type="button"
+                      onClick={() => setShowChatEmojiPicker(prev => !prev)}
+                      className={`p-2 rounded-none border border-[rgba(64,56,47,0.2)] transition-all ${
+                        showChatEmojiPicker ? 'bg-[#D4A373] text-[#40382F]' : 'bg-[#FAEDCD] hover:bg-[#E9EDC9] text-[#75695A] hover:text-[#40382F]'
+                      }`}
+                      title="Insert emoji"
+                    >
+                      <Smile className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       type="submit"
                       className="p-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] border border-[#40382F]/20 transition-all"
+                      title="Send message"
                     >
                       <Send className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   {!isAuthenticated && (
-                    <p className="text-[10px] text-[#75695A] mt-1 cursor-pointer hover:underline" onClick={onOpenAuth}>
+                    <p className="text-[10px] text-[#75695A] mt-1 cursor-pointer hover:underline" onClick={() => onOpenAuth?.()}>
                       🔒 Viewing as guest. <span className="font-bold text-[#40382F]">Sign in</span> to post messages.
                     </p>
                   )}
@@ -3136,9 +3333,23 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                   )}
                 </div>
 
-                <form onSubmit={handleSendDm} className="pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
-                  <div className="flex items-center space-x-2">
+                <form onSubmit={handleSendDm} className="relative pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
+                  {showDmEmojiPicker && (
+                    <div ref={dmEmojiPickerRef} className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl border border-[rgba(64,56,47,0.2)] bg-[#FEFAE0]">
+                      <EmojiPicker
+                        onEmojiClick={handleDmEmojiClick}
+                        theme={Theme.LIGHT}
+                        width={290}
+                        height={360}
+                        searchPlaceHolder="Search emojis..."
+                        previewConfig={{ showPreview: false }}
+                        lazyLoadEmojis={true}
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center space-x-1.5">
                     <input
+                      ref={dmInputRef}
                       type="text"
                       placeholder={`Message ${activeDmRecipient.user?.display_name || 'peer'}...`}
                       value={dmInput}
@@ -3146,8 +3357,19 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                       className="flex-1 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-2 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
                     />
                     <button
+                      type="button"
+                      onClick={() => setShowDmEmojiPicker(prev => !prev)}
+                      className={`p-2 rounded-none border border-[rgba(64,56,47,0.2)] transition-all ${
+                        showDmEmojiPicker ? 'bg-[#D4A373] text-[#40382F]' : 'bg-[#FAEDCD] hover:bg-[#E9EDC9] text-[#75695A] hover:text-[#40382F]'
+                      }`}
+                      title="Insert emoji"
+                    >
+                      <Smile className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       type="submit"
                       className="p-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] border border-[#40382F]/20 transition-all"
+                      title="Send DM"
                     >
                       <Send className="w-3.5 h-3.5" />
                     </button>
