@@ -1158,6 +1158,9 @@ app.get('/api/rooms/:id', (req, res) => {
 
 app.post('/api/rooms', authenticateToken, (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators can create study rooms' });
+    }
     const { name, description, category, bgTheme, isPrivate, passcode } = req.body;
 
     if (!name || !category) {
@@ -1425,6 +1428,260 @@ app.delete('/api/tasks/:id', authenticateToken, (req, res) => {
     res.status(500).json({ error: 'Failed to delete task' });
   }
 });
+// ==========================================
+// FEATURE 4: 1-to-1 Private Direct Messaging
+// ==========================================
+app.get('/api/direct-messages/:recipientId', authenticateToken, (req, res) => {
+  try {
+    const { roomId } = req.query;
+    const { recipientId } = req.params;
+
+    let query = `
+      SELECT 
+        dm.id, dm.room_id as roomId, dm.sender_id as senderId, dm.recipient_id as recipientId,
+        dm.message, dm.created_at as createdAt,
+        uSender.display_name as senderName, uSender.avatar_seed as senderAvatar
+      FROM direct_messages dm
+      JOIN users uSender ON dm.sender_id = uSender.id
+      WHERE ((dm.sender_id = ? AND dm.recipient_id = ?) OR (dm.sender_id = ? AND dm.recipient_id = ?))
+    `;
+    const params = [req.user.id, recipientId, recipientId, req.user.id];
+
+    if (roomId) {
+      query += ' AND dm.room_id = ?';
+      params.push(roomId);
+    }
+    query += ' ORDER BY dm.created_at ASC LIMIT 100';
+
+    const messages = db.prepare(query).all(...params);
+    res.json({
+      messages: messages.map(m => ({
+        id: m.id,
+        roomId: m.roomId,
+        senderId: m.senderId,
+        recipientId: m.recipientId,
+        senderName: m.senderName,
+        senderAvatar: m.senderAvatar,
+        message: m.message,
+        timestamp: new Date(m.createdAt).getTime(),
+        createdAt: m.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Fetch direct messages error:', err);
+    res.status(500).json({ error: 'Failed to fetch direct messages' });
+  }
+});
+
+// ==========================================
+// FEATURE 5: Spotify Music Sharing Integration
+// ==========================================
+app.get('/api/spotify/auth-url', authenticateToken, (req, res) => {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/spotify/callback`;
+
+  if (!clientId) {
+    return res.json({
+      configured: false,
+      message: 'Spotify Client ID not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in environment.'
+    });
+  }
+
+  const scope = 'user-read-currently-playing user-read-playback-state';
+  const state = req.user.id;
+  const authUrl = `https://accounts.spotify.com/authorize?${new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    scope,
+    redirect_uri: redirectUri,
+    state
+  }).toString()}`;
+
+  res.json({ configured: true, url: authUrl });
+});
+
+app.get('/api/spotify/callback', async (req, res) => {
+  try {
+    const { code, state: userId, error } = req.query;
+    if (error || !code) {
+      return res.redirect('/?spotify=error');
+    }
+
+    const clientId = process.env.SPOTIFY_CLIENT_ID;
+    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+    const redirectUri = process.env.SPOTIFY_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/spotify/callback`;
+
+    const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri
+      }).toString()
+    });
+
+    const tokenData = await tokenRes.json();
+    if (tokenData.access_token) {
+      const expiresAt = Date.now() + (tokenData.expires_in || 3600) * 1000;
+      db.prepare(`
+        INSERT INTO spotify_connections (user_id, access_token, refresh_token, expires_at, is_sharing, updated_at)
+        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+          access_token = excluded.access_token,
+          refresh_token = COALESCE(excluded.refresh_token, spotify_connections.refresh_token),
+          expires_at = excluded.expires_at,
+          is_sharing = 1,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(userId, tokenData.access_token, tokenData.refresh_token || null, expiresAt);
+    }
+
+    res.redirect('/?spotify=connected');
+  } catch (err) {
+    console.error('Spotify callback error:', err);
+    res.redirect('/?spotify=failed');
+  }
+});
+
+app.get('/api/spotify/status', authenticateToken, (req, res) => {
+  try {
+    const clientId = process.env.SPOTIFY_CLIENT_ID;
+    const conn = db.prepare('SELECT * FROM spotify_connections WHERE user_id = ?').get(req.user.id);
+    res.json({
+      configured: Boolean(clientId),
+      connected: Boolean(conn),
+      isSharing: Boolean(conn && conn.is_sharing),
+      currentTrack: conn && conn.last_track_title ? {
+        title: conn.last_track_title,
+        artist: conn.last_artist,
+        albumArt: conn.last_album_art,
+        spotifyUrl: conn.last_spotify_url,
+        isPlaying: Boolean(conn.is_playing)
+      } : null
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch Spotify status' });
+  }
+});
+
+app.post('/api/spotify/toggle-sharing', authenticateToken, (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const conn = db.prepare('SELECT is_sharing FROM spotify_connections WHERE user_id = ?').get(req.user.id);
+    let nextSharing;
+    if (typeof enabled === 'boolean') {
+      nextSharing = enabled ? 1 : 0;
+    } else {
+      nextSharing = conn ? (conn.is_sharing === 1 ? 0 : 1) : 1;
+    }
+
+    if (!conn) {
+      db.prepare(`
+        INSERT INTO spotify_connections (user_id, is_sharing, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+      `).run(req.user.id, nextSharing);
+    } else {
+      db.prepare('UPDATE spotify_connections SET is_sharing = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(nextSharing, req.user.id);
+    }
+    res.json({ success: true, isSharing: Boolean(nextSharing) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to toggle Spotify sharing' });
+  }
+});
+
+app.post('/api/spotify/disconnect', authenticateToken, (req, res) => {
+  try {
+    db.prepare('DELETE FROM spotify_connections WHERE user_id = ?').run(req.user.id);
+    res.json({ success: true, message: 'Spotify disconnected' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to disconnect Spotify' });
+  }
+});
+
+app.get('/api/spotify/current-track', authenticateToken, async (req, res) => {
+  try {
+    let conn = db.prepare('SELECT * FROM spotify_connections WHERE user_id = ?').get(req.user.id);
+    if (!conn || !conn.access_token) {
+      return res.json({ connected: false, isPlaying: false });
+    }
+
+    if (!conn.is_sharing) {
+      return res.json({ connected: true, isSharing: false, isPlaying: false });
+    }
+
+    let accessToken = conn.access_token;
+    // Refresh if within 2 minutes of expiry
+    if (conn.expires_at && Date.now() > (conn.expires_at - 120000) && conn.refresh_token) {
+      const clientId = process.env.SPOTIFY_CLIENT_ID;
+      const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+      try {
+        const refreshRes = await fetch('https://accounts.spotify.com/api/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+          },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: conn.refresh_token
+          }).toString()
+        });
+        const refreshData = await refreshRes.json();
+        if (refreshData.access_token) {
+          accessToken = refreshData.access_token;
+          const expiresAt = Date.now() + (refreshData.expires_in || 3600) * 1000;
+          db.prepare('UPDATE spotify_connections SET access_token = ?, expires_at = ? WHERE user_id = ?').run(accessToken, expiresAt, req.user.id);
+        }
+      } catch (refreshErr) {
+        console.warn('Spotify token refresh error:', refreshErr.message);
+      }
+    }
+
+    // Fetch currently playing track
+    const spotifyRes = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (spotifyRes.status === 204 || spotifyRes.status > 300) {
+      db.prepare('UPDATE spotify_connections SET is_playing = 0 WHERE user_id = ?').run(req.user.id);
+      return res.json({ connected: true, isSharing: true, isPlaying: false });
+    }
+
+    const trackData = await spotifyRes.json();
+    if (trackData && trackData.item) {
+      const item = trackData.item;
+      const title = item.name;
+      const artist = item.artists?.map(a => a.name).join(', ') || 'Unknown Artist';
+      const albumArt = item.album?.images?.[0]?.url || null;
+      const spotifyUrl = item.external_urls?.spotify || null;
+      const isPlaying = trackData.is_playing ? 1 : 0;
+
+      db.prepare(`
+        UPDATE spotify_connections 
+        SET last_track_title = ?, last_artist = ?, last_album_art = ?, last_spotify_url = ?, is_playing = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `).run(title, artist, albumArt, spotifyUrl, isPlaying, req.user.id);
+
+      return res.json({
+        connected: true,
+        isSharing: true,
+        isPlaying: Boolean(isPlaying),
+        title,
+        artist,
+        albumArt,
+        spotifyUrl
+      });
+    }
+
+    res.json({ connected: true, isSharing: true, isPlaying: false });
+  } catch (err) {
+    console.error('Fetch Spotify track error:', err.message);
+    res.status(500).json({ error: 'Failed to query Spotify playback' });
+  }
+});
 
 // ==========================================
 // WebSockets & Real-Time Live Engine (Socket.IO)
@@ -1485,7 +1742,7 @@ io.on('connection', (socket) => {
   });
 
   // 1. Join Room & Start Authoritative Live Time Tracking
-  socket.on('join-room', ({ roomId, user, mediaState, statusText }) => {
+  socket.on('join-room', ({ roomId, user, mediaState, statusText, spotify }) => {
     // If client was already in another room, clean up previous room first
     if (currentRoomId && currentRoomId !== roomId) {
       handleLeave(socket, currentRoomId);
@@ -1530,8 +1787,9 @@ io.on('connection', (socket) => {
     const participantInfo = {
       socketId: socket.id,
       user: currentUser,
-      mediaState: mediaState || { mic: false, video: true, screenShare: false },
+      mediaState: mediaState || { mic: false, video: true },
       statusText: statusText || 'Focusing...',
+      spotify: spotify || null,
       joinedAt: Date.now(),
     };
 
@@ -1772,15 +2030,87 @@ io.on('connection', (socket) => {
     syncMessageToMongo(message, roomId);
   });
 
-  // Floating live emoji reactions
+  // Floating live emoji reactions with rate-limiting and validation
+  let lastReactionAt = 0;
   socket.on('send-reaction', ({ roomId, emoji, senderName }) => {
+    const now = Date.now();
+    if (now - lastReactionAt < 300) return; // Rate-limit: max 1 per 300ms
+    lastReactionAt = now;
+
+    if (typeof emoji !== 'string' || !emoji.trim() || emoji.length > 10) return;
+
     io.to(roomId).emit('reaction-received', {
       id: 'react-' + crypto.randomUUID(),
-      emoji,
+      emoji: emoji.trim(),
       senderName: senderName || (currentUser ? currentUser.display_name : 'Peer'),
       socketId: socket.id,
-      timestamp: Date.now()
+      timestamp: now
     });
+  });
+
+  // Spotify live playback status broadcast to room participants
+  socket.on('spotify-status-updated', ({ roomId, spotify }) => {
+    const roomState = activeRooms.get(roomId);
+    if (roomState && roomState.participants.has(socket.id)) {
+      const p = roomState.participants.get(socket.id);
+      p.spotify = spotify;
+      socket.to(roomId).emit('peer-spotify-updated', {
+        socketId: socket.id,
+        userId: currentUser ? currentUser.id : null,
+        spotify
+      });
+    }
+  });
+
+  // 1-to-1 Private Direct Messaging between Room Participants
+  socket.on('send-direct-message', ({ roomId, recipientId, recipientSocketId, text }) => {
+    const rawText = (text || '').trim();
+    if (!rawText || rawText.length > 2000) return;
+    if (!currentUser || !currentUser.id) return;
+
+    const dmId = 'dm-' + crypto.randomUUID();
+    const now = Date.now();
+
+    const dmRecord = {
+      id: dmId,
+      roomId,
+      senderId: currentUser.id,
+      recipientId,
+      senderName: currentUser.display_name || currentUser.username || 'Scholar',
+      senderAvatar: currentUser.avatar_seed || 'User',
+      message: rawText,
+      timestamp: now,
+      createdAt: new Date(now).toISOString()
+    };
+
+    // Save to database if sender is authenticated registered user
+    if (!currentUser.id.startsWith('guest-') && recipientId && !recipientId.startsWith('guest-')) {
+      try {
+        db.prepare(`
+          INSERT INTO direct_messages (id, room_id, sender_id, recipient_id, message)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(dmId, roomId, currentUser.id, recipientId, rawText);
+      } catch (err) {
+        console.warn('[DM] Warning saving direct message:', err.message);
+      }
+    }
+
+    // Deliver strictly to the recipient's socket(s) in this room
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('direct-message-received', dmRecord);
+    } else if (roomId) {
+      const roomState = activeRooms.get(roomId);
+      if (roomState) {
+        for (const [sId, p] of roomState.participants.entries()) {
+          if (p.user?.id === recipientId) {
+            io.to(sId).emit('direct-message-received', dmRecord);
+          }
+        }
+      }
+    }
+
+    // Acknowledge back to sender socket
+    socket.emit('direct-message-sent', dmRecord);
   });
 
   // Explicit Leave Room

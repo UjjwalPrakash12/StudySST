@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, Sparkles, Plus, Search, BookOpen, Coffee, Cpu, Stethoscope, 
+  Users, Sparkles, Search, BookOpen, Coffee, Cpu, Stethoscope, 
   Palette, Play, Shield, Timer, Flame, CheckCircle2, Radio 
 } from 'lucide-react';
 import { api } from '../utils/api';
@@ -15,7 +15,7 @@ const CATEGORY_MAP = {
   'Creativity & Arts': Palette,
 };
 
-export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, isAuthenticated }) {
+export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
   const { totalActive, authenticatedCount, anonymousCount, roomCounts } = usePresence();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,14 +80,6 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
             >
               <Play className="w-4 h-4 fill-[#40382F]" />
               <span>Hop into Quick Focus Room</span>
-            </button>
-
-            <button
-              onClick={onOpenCreateRoom}
-              className="px-5 py-3 rounded-none bg-[#CCD5AE] hover:bg-[#BCC69B] text-[#40382F] font-semibold text-sm border border-[rgba(64,56,47,0.2)] flex items-center space-x-2 transition-all"
-            >
-              <Plus className="w-4 h-4 text-[#40382F]" />
-              <span>Create Custom Study Hall</span>
             </button>
           </div>
 
@@ -174,10 +166,10 @@ export default function LobbyView({ onJoinRoom, onOpenCreateRoom, onOpenAuth, is
         <div className="p-12 text-center rounded-none bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)]">
           <p className="text-[#75695A] text-sm">No study halls match your filter.</p>
           <button
-            onClick={onOpenCreateRoom}
+            onClick={() => { setSearch(''); setSelectedCategory('All Rooms'); }}
             className="mt-4 px-4 py-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20"
           >
-            Create this Study Hall
+            Clear Filters
           </button>
         </div>
       ) : (

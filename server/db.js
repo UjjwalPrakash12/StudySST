@@ -123,12 +123,43 @@ db.exec(`
     FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE
   );
 
+  -- Direct 1-to-1 Private Messages Schema
+  CREATE TABLE IF NOT EXISTS direct_messages (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    recipient_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  -- Spotify Music Sharing Integration Schema
+  CREATE TABLE IF NOT EXISTS spotify_connections (
+    user_id TEXT PRIMARY KEY,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at INTEGER,
+    is_sharing INTEGER DEFAULT 1,
+    last_track_title TEXT,
+    last_artist TEXT,
+    last_album_art TEXT,
+    last_spotify_url TEXT,
+    is_playing INTEGER DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_blogs_created ON blogs(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_blogs_likes ON blogs(likes_count DESC);
   CREATE INDEX IF NOT EXISTS idx_blogs_comments ON blogs(comments_count DESC);
   CREATE INDEX IF NOT EXISTS idx_live_sessions_user ON live_sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_live_sessions_active ON live_sessions(is_active);
   CREATE INDEX IF NOT EXISTS idx_live_sessions_started ON live_sessions(started_at);
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_id, recipient_id);
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_room ON direct_messages(room_id);
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_created ON direct_messages(created_at);
 `);
 
 // Safe migration for existing users table columns if needed

@@ -9,16 +9,27 @@ import {
   ConnectionQuality 
 } from 'livekit-client';
 import { 
-  Mic, MicOff, Video, VideoOff, ScreenShare, 
-  MessageSquare, CheckSquare, Volume2, VolumeX, LogOut, Send, 
+  Mic, MicOff, Video, VideoOff, 
+  MessageSquare, MessageCircle, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
-  Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff
+  Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff,
+  Music, Smile, ExternalLink, Play, Pause, Disc, Lock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
-import { soundSynthesizer } from '../utils/soundSynthesizer';
+import { soundSynthesizer, SOUND_TRACKS } from '../utils/soundSynthesizer';
 
-const REACTION_EMOJIS = ['👏', '🔥', '💯', '☕', '⚡', '📚'];
+const QUICK_REACTION_EMOJIS = ['👏', '🔥', '💯', '☕', '⚡', '📚'];
+
+const REACTION_CATEGORIES = {
+  'Positive': ['👍', '👏', '🙌', '❤️'],
+  'Encouragement': ['💪', '🔥', '⭐', '🎯'],
+  'Emotions': ['😂', '😮', '🥹', '😎'],
+  'Study': ['📚', '✍️', '🧠', '💡'],
+  'Celebration': ['🎉', '🏆', '🚀', '✨'],
+  'Support': ['🤝', '💯', '🌟', '😊'],
+};
+
 const TILES_PER_PAGE = 8; // Optimal tile count to prevent browser overload for 10-30+ participants
 
 const getIceServers = () => {
@@ -58,7 +69,7 @@ const VIDEO_CONSTRAINTS = {
 /**
  * Dedicated Remote Video Tile with support for both LiveKit SFU tracks and WebRTC Mesh streams.
  */
-function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality }) {
+function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality, spotifyTrack, onOpenDm }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
 
@@ -139,12 +150,21 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
 
       {/* Top Status Overlay */}
       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
-        <span className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5 truncate max-w-[70%]">
+        <span className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5 truncate max-w-[55%]">
           {isSpeaking && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse flex-shrink-0"></span>}
           <span className="truncate">{peer.user?.display_name || 'Study Peer'}</span>
         </span>
 
         <div className="flex items-center space-x-1">
+          {/* Direct Message Button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenDm?.(peer); }}
+            className="pointer-events-auto p-1 rounded-none bg-[#FEFAE0]/95 hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] hover:text-[#D4A373] transition-all"
+            title={`Direct message ${peer.user?.display_name || 'peer'}`}
+          >
+            <MessageCircle className="w-3 h-3" />
+          </button>
+
           {isMicMuted ? (
             <span className="p-1 rounded-none bg-rose-100/90 border border-rose-200 text-rose-800" title="Microphone muted">
               <MicOff className="w-3 h-3" />
@@ -166,6 +186,26 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         </div>
       </div>
 
+      {/* Spotify Playing Pill */}
+      {spotifyTrack?.isPlaying && spotifyTrack?.trackTitle && (
+        <div className="absolute bottom-8 left-2.5 right-2.5 pointer-events-none">
+          <a
+            href={spotifyTrack.spotifyUrl || '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pointer-events-auto inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-none bg-[#1DB954]/15 backdrop-blur-sm border border-[#1DB954]/40 text-[10px] text-[#191414] hover:bg-[#1DB954]/25 transition-all max-w-full truncate"
+            title={`Listening to ${spotifyTrack.trackTitle} by ${spotifyTrack.artist || 'Unknown'} on Spotify`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1DB954] animate-pulse flex-shrink-0"></span>
+            <span className="truncate font-semibold">🎵 {spotifyTrack.trackTitle}</span>
+            {spotifyTrack.artist && (
+              <span className="truncate text-[#75695A] hidden sm:inline">• {spotifyTrack.artist}</span>
+            )}
+            <ExternalLink className="w-2.5 h-2.5 text-[#1DB954] flex-shrink-0 ml-0.5" />
+          </a>
+        </div>
+      )}
+
       {/* Bottom Subject Goal Pill */}
       <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
         <div className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[10px] text-[#40382F] truncate flex items-center space-x-1.5">
@@ -184,7 +224,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [localStream, setLocalStream] = useState(null);
   const [micActive, setMicActive] = useState(false);
   const [videoActive, setVideoActive] = useState(true);
-  const [screenSharing, setScreenSharing] = useState(false);
   const [participants, setParticipants] = useState([]);
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream (Mesh fallback)
   const [livekitRemoteTracks, setLivekitRemoteTracks] = useState(new Map()); // participantIdentity -> RemoteTrack
@@ -212,27 +251,46 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [floatingReactions, setFloatingReactions] = useState([]);
+  const [isReactionMenuOpen, setIsReactionMenuOpen] = useState(false);
+  const [selectedReactionCategory, setSelectedReactionCategory] = useState('Positive');
+  const lastReactionTimeRef = useRef(0);
 
-  // UI Drawers: 'chat' | 'tasks' | 'audio' | 'scholars' | null
+  // UI Drawers: 'chat' | 'tasks' | 'audio' | 'scholars' | 'spotify' | 'direct-message' | null
   const [activeDrawer, setActiveDrawer] = useState(null);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [scholarsSearch, setScholarsSearch] = useState('');
 
-  // Audio Synthesizer volumes
-  const [ambientVolumes, setAmbientVolumes] = useState({
-    rain: 0,
-    cafe: 0,
-    binaural: 0,
-    fire: 0,
-    master: 0.7,
+  // Direct Messaging between individual participants
+  const [activeDmRecipient, setActiveDmRecipient] = useState(null); // peer object { socketId, user: { id, display_name } }
+  const [directMessages, setDirectMessages] = useState([]);
+  const [dmInput, setDmInput] = useState('');
+  const [unreadDms, setUnreadDms] = useState({}); // userId -> count
+  const activeDmRecipientRef = useRef(null);
+  const activeDrawerRef = useRef(null);
+
+  // Procedural Soundscapes Engine (12 tracks across 8 categories)
+  const [activeSoundId, setActiveSoundId] = useState(() => soundSynthesizer.getActiveTrack()?.id || null);
+  const [soundTrackVol, setSoundTrackVol] = useState(() => soundSynthesizer.getTrackVolume());
+  const [masterSoundVol, setMasterSoundVol] = useState(() => soundSynthesizer.getMasterVolume());
+  const [isAudioPlaying, setIsAudioPlaying] = useState(() => soundSynthesizer.isPlaying());
+  const [soundCategoryFilter, setSoundCategoryFilter] = useState('All');
+
+  // Spotify Opt-in Music Sharing
+  const [spotifyStatus, setSpotifyStatus] = useState({
+    connected: false,
+    isSharing: false,
+    track: null,
+    configured: true,
   });
+  const [peerSpotifyMap, setPeerSpotifyMap] = useState({});
+  const [isSpotifyLoading, setIsSpotifyLoading] = useState(false);
 
   // Refs
   const socketRef = useRef(null);
   const localVideoRef = useRef(null);
   const chatScrollRef = useRef(null);
+  const dmScrollRef = useRef(null);
   const localStreamRef = useRef(null);
-  const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // socketId -> RTCPeerConnection
   const livekitRoomRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -242,6 +300,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const wasMutedBeforePttRef = useRef(false);
   const isSpeakingLocalRef = useRef(false);
   const sessionStartedAtRef = useRef(null);
+
+  useEffect(() => {
+    activeDmRecipientRef.current = activeDmRecipient;
+  }, [activeDmRecipient]);
+
+  useEffect(() => {
+    activeDrawerRef.current = activeDrawer;
+  }, [activeDrawer]);
 
   useEffect(() => {
     micActiveRef.current = micActive;
@@ -393,17 +459,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         console.warn('Error stopping local tracks:', err);
       }
       localStreamRef.current = null;
-    }
-    if (screenStreamRef.current) {
-      try {
-        screenStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-        });
-      } catch (err) {
-        console.warn('Error stopping screen share tracks:', err);
-      }
-      screenStreamRef.current = null;
     }
     if (localVideoRef.current && localVideoRef.current.srcObject) {
       try {
@@ -646,12 +701,23 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     socket.emit('join-room', {
       roomId: room.id,
       user: currentUserData,
-      mediaState: { mic: false, video: videoActive, screenShare: screenSharing },
-      statusText
+      mediaState: { mic: false, video: videoActive },
+      statusText,
+      spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null
     });
 
     socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages, sessionStartedAt, elapsedSeconds }) => {
       setParticipants(existingParticipants || []);
+      if (existingParticipants) {
+        const initialSpotify = {};
+        for (const p of existingParticipants) {
+          if (p.spotify) {
+            initialSpotify[p.socketId] = p.spotify;
+            if (p.user?.id) initialSpotify[p.user.id] = p.spotify;
+          }
+        }
+        setPeerSpotifyMap(prev => ({ ...prev, ...initialSpotify }));
+      }
       if (initialMessages) {
         setMessages(initialMessages);
       }
@@ -731,6 +797,55 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         const filtered = prev.filter(p => p.socketId !== participant.socketId);
         return [...filtered, participant];
       });
+      if (participant.spotify) {
+        setPeerSpotifyMap(prev => ({
+          ...prev,
+          [participant.socketId]: participant.spotify,
+          ...(participant.user?.id ? { [participant.user.id]: participant.spotify } : {})
+        }));
+      }
+    });
+
+    socket.on('peer-spotify-updated', ({ socketId, userId, spotify }) => {
+      setPeerSpotifyMap(prev => ({
+        ...prev,
+        [socketId]: spotify,
+        ...(userId ? { [userId]: spotify } : {})
+      }));
+    });
+
+    socket.on('direct-message-received', (dmRecord) => {
+      const activeDm = activeDmRecipientRef.current;
+      const isCurrentConversation = activeDm && (
+        activeDm.user?.id === dmRecord.sender_id || 
+        activeDm.socketId === dmRecord.sender_id
+      );
+
+      if (isCurrentConversation) {
+        setDirectMessages(prev => [...prev, dmRecord]);
+        setTimeout(() => {
+          if (dmScrollRef.current) {
+            dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
+          }
+        }, 50);
+      } else {
+        setUnreadDms(prev => ({
+          ...prev,
+          [dmRecord.sender_id]: (prev[dmRecord.sender_id] || 0) + 1
+        }));
+      }
+    });
+
+    socket.on('direct-message-sent', (dmRecord) => {
+      setDirectMessages(prev => {
+        if (prev.some(m => m.id === dmRecord.id)) return prev;
+        return [...prev, dmRecord];
+      });
+      setTimeout(() => {
+        if (dmScrollRef.current) {
+          dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
+        }
+      }, 50);
     });
 
     socket.on('user-left', ({ socketId }) => {
@@ -1098,70 +1213,203 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
-  const toggleScreenShare = async () => {
-    if (!screenSharing) {
+  // Load Spotify status on mount & handle redirect callback
+  useEffect(() => {
+    const checkSpotify = async () => {
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        screenStreamRef.current = screenStream;
-        setScreenSharing(true);
-        const screenTrack = screenStream.getVideoTracks()[0];
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('spotify')) {
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, '', newUrl);
         }
-
-        peerConnectionsRef.current.forEach(pc => {
-          const senders = pc.getSenders();
-          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-          if (videoSender) {
-            videoSender.replaceTrack(screenTrack);
+        if (isAuthenticated) {
+          const res = await api.getSpotifyStatus();
+          setSpotifyStatus(res);
+          if (res.connected && res.isSharing && res.track) {
+            socketRef.current?.emit('spotify-status-updated', {
+              roomId: room.id,
+              spotify: res.track,
+            });
           }
-        });
-
-        screenTrack.onended = () => {
-          stopScreenSharing();
-        };
-
-        socketRef.current?.emit('update-media-state', {
-          roomId: room.id,
-          mediaState: { screenShare: true }
-        });
-      } catch (e) {
-        console.warn('Screen share cancelled:', e);
+        }
+      } catch (err) {
+        console.warn('Spotify status fetch error:', err);
       }
-    } else {
-      stopScreenSharing();
+    };
+    checkSpotify();
+  }, [isAuthenticated, room.id]);
+
+  // Periodic Spotify polling to update currently playing track for room peers
+  useEffect(() => {
+    if (!isAuthenticated || !spotifyStatus.connected || !spotifyStatus.isSharing) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await api.getSpotifyCurrentTrack();
+        if (res && res.track) {
+          setSpotifyStatus(prev => ({
+            ...prev,
+            track: res.track,
+          }));
+          socketRef.current?.emit('spotify-status-updated', {
+            roomId: room.id,
+            spotify: res.track,
+          });
+        }
+      } catch (e) {
+        console.warn('Spotify polling error:', e);
+      }
+    }, 15000);
+
+    return () => clearInterval(pollInterval);
+  }, [isAuthenticated, spotifyStatus.connected, spotifyStatus.isSharing, room.id]);
+
+  const handleConnectSpotify = async () => {
+    setIsSpotifyLoading(true);
+    try {
+      const res = await api.getSpotifyAuthUrl();
+      if (res.configured === false) {
+        alert('Spotify Integration Notice:\nSpotify Client ID / Secret are not configured in server environment variables (SPOTIFY_CLIENT_ID). Set them in .env to connect your Spotify account.');
+        setIsSpotifyLoading(false);
+        return;
+      }
+      if (res.authUrl) {
+        window.location.href = res.authUrl;
+      }
+    } catch (err) {
+      alert('Failed to connect Spotify: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsSpotifyLoading(false);
     }
   };
 
-  const stopScreenSharing = () => {
-    if (screenStreamRef.current) {
-      try {
-        screenStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-      } catch (e) {}
-      screenStreamRef.current = null;
-    }
-    setScreenSharing(false);
-
-    const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (cameraTrack && videoActive) {
-      peerConnectionsRef.current.forEach(pc => {
-        const senders = pc.getSenders();
-        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(cameraTrack);
+  const handleToggleSpotifySharing = async () => {
+    try {
+      const nextVal = !spotifyStatus.isSharing;
+      const res = await api.toggleSpotifySharing(nextVal);
+      setSpotifyStatus(prev => ({ ...prev, isSharing: res.isSharing }));
+      if (!res.isSharing) {
+        socketRef.current?.emit('spotify-status-updated', {
+          roomId: room.id,
+          spotify: null,
+        });
+      } else {
+        const trackRes = await api.getSpotifyCurrentTrack();
+        if (trackRes?.track) {
+          setSpotifyStatus(prev => ({ ...prev, track: trackRes.track }));
+          socketRef.current?.emit('spotify-status-updated', {
+            roomId: room.id,
+            spotify: trackRes.track,
+          });
         }
+      }
+    } catch (err) {
+      console.error('Error toggling spotify sharing:', err);
+    }
+  };
+
+  const handleDisconnectSpotify = async () => {
+    if (!confirm('Are you sure you want to disconnect Spotify?')) return;
+    try {
+      await api.disconnectSpotify();
+      setSpotifyStatus({ connected: false, isSharing: false, track: null, configured: true });
+      socketRef.current?.emit('spotify-status-updated', {
+        roomId: room.id,
+        spotify: null,
+      });
+    } catch (err) {
+      console.error('Error disconnecting Spotify:', err);
+    }
+  };
+
+  // Direct Messaging Handlers
+  const handleOpenDm = async (peer) => {
+    setActiveDmRecipient(peer);
+    setActiveDrawer('direct-message');
+    if (peer.user?.id) {
+      setUnreadDms(prev => {
+        const next = { ...prev };
+        delete next[peer.user.id];
+        return next;
       });
     }
-
-    if (localVideoRef.current && localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
+    if (isAuthenticated && peer.user?.id) {
+      try {
+        const res = await api.getDirectMessages(peer.user.id);
+        setDirectMessages(res.messages || []);
+        setTimeout(() => {
+          if (dmScrollRef.current) {
+            dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
+          }
+        }, 50);
+      } catch (err) {
+        console.warn('Failed to load direct messages:', err);
+        setDirectMessages([]);
+      }
+    } else {
+      setDirectMessages([]);
     }
+  };
 
-    socketRef.current?.emit('update-media-state', {
+  const handleSendDm = (e) => {
+    e.preventDefault();
+    if (!dmInput.trim() || !activeDmRecipient) return;
+
+    const text = dmInput.trim();
+    socketRef.current?.emit('send-direct-message', {
       roomId: room.id,
-      mediaState: { screenShare: false }
+      recipientId: activeDmRecipient.user?.id,
+      recipientSocketId: activeDmRecipient.socketId,
+      text,
     });
+
+    const optimisticMsg = {
+      id: 'dm-local-' + Date.now(),
+      room_id: room.id,
+      sender_id: user?.id,
+      recipient_id: activeDmRecipient.user?.id,
+      message: text,
+      created_at: new Date().toISOString(),
+      sender_name: user?.display_name || 'You',
+      recipient_name: activeDmRecipient.user?.display_name || 'Scholar',
+    };
+    setDirectMessages(prev => [...prev, optimisticMsg]);
+    setDmInput('');
+    setTimeout(() => {
+      if (dmScrollRef.current) {
+        dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
+      }
+    }, 50);
+  };
+
+  // Calming Soundscapes Procedural Engine Handlers
+  const handleToggleSound = (trackId) => {
+    if (activeSoundId === trackId && isAudioPlaying) {
+      soundSynthesizer.stopTrack();
+      setIsAudioPlaying(false);
+    } else {
+      soundSynthesizer.playTrack(trackId);
+      setActiveSoundId(trackId);
+      setIsAudioPlaying(true);
+    }
+  };
+
+  const handleSoundTrackVol = (vol) => {
+    const v = parseFloat(vol);
+    setSoundTrackVol(v);
+    soundSynthesizer.setTrackVolume(v);
+  };
+
+  const handleMasterSoundVol = (vol) => {
+    const v = parseFloat(vol);
+    setMasterSoundVol(v);
+    soundSynthesizer.setMasterVolume(v);
+  };
+
+  const handleStopAllSound = () => {
+    soundSynthesizer.stopAll();
+    setIsAudioPlaying(false);
+    setActiveSoundId(null);
   };
 
   const handleSaveStatus = (e) => {
@@ -1186,11 +1434,28 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   };
 
   const handleSendReaction = (emoji) => {
+    const now = Date.now();
+    if (now - lastReactionTimeRef.current < 300) {
+      return; // Rate limit 300ms to prevent spam
+    }
+    lastReactionTimeRef.current = now;
+
     socketRef.current?.emit('send-reaction', {
       roomId: room.id,
       emoji,
       senderName: user ? user.display_name : 'Peer'
     });
+
+    const rx = {
+      id: 'rx-local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      emoji,
+      user: user || { display_name: 'You' },
+      leftPercent: 20 + Math.random() * 60,
+    };
+    setFloatingReactions(prev => [...prev, rx]);
+    setTimeout(() => {
+      setFloatingReactions(prev => prev.filter(item => item.id !== rx.id));
+    }, 2500);
   };
 
   const handleAddTask = async (e) => {
@@ -1223,16 +1488,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
-  const handleVolumeChange = (channel, value) => {
-    const val = parseFloat(value);
-    setAmbientVolumes(prev => ({ ...prev, [channel]: val }));
-    if (channel === 'master') {
-      soundSynthesizer.setMasterVolume(val);
-    } else {
-      soundSynthesizer.setChannelVolume(channel, val);
-    }
-  };
-
   const formatLiveElapsed = (seconds) => {
     const s = Math.max(0, seconds || 0);
     const h = Math.floor(s / 3600);
@@ -1241,7 +1496,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const isAmbientActive = ambientVolumes.rain > 0 || ambientVolumes.cafe > 0 || ambientVolumes.binaural > 0 || ambientVolumes.fire > 0;
+  const isAmbientActive = isAudioPlaying;
+  const totalUnreadDms = Object.values(unreadDms).reduce((sum, count) => sum + count, 0);
   const completedTasksCount = tasks.filter(t => t.completed).length;
 
   // Separate remote peers and prioritize active speakers and cameras for Page 1
@@ -1405,11 +1661,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         </div>
 
         {/* Right Drawer Toggles */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1.5 sm:space-x-2">
           {/* All Connected Scholars Drawer Toggle */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'scholars' ? null : 'scholars')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
               activeDrawer === 'scholars'
                 ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
                 : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
@@ -1425,7 +1681,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Ambient Sound Button */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'audio' ? null : 'audio')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
               activeDrawer === 'audio' || isAmbientActive
                 ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
                 : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
@@ -1438,10 +1694,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             )}
           </button>
 
+          {/* Spotify Music Toggle */}
+          <button
+            onClick={() => setActiveDrawer(activeDrawer === 'spotify' ? null : 'spotify')}
+            className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+              activeDrawer === 'spotify' || (spotifyStatus.isSharing && spotifyStatus.track?.isPlaying)
+                ? 'bg-[#1DB954]/20 border-[#1DB954]/50 text-[#191414] font-bold'
+                : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
+            }`}
+            title="Spotify Music Sharing"
+          >
+            <Music className="w-3.5 h-3.5 text-[#1DB954]" />
+            <span className="hidden md:inline">Spotify</span>
+            {spotifyStatus.isSharing && spotifyStatus.track?.isPlaying && (
+              <span className="w-1.5 h-1.5 bg-[#1DB954] rounded-full animate-pulse"></span>
+            )}
+          </button>
+
           {/* Tasks Button */}
           <button
             onClick={() => setActiveDrawer(activeDrawer === 'tasks' ? null : 'tasks')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
               activeDrawer === 'tasks'
                 ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
                 : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
@@ -1462,7 +1735,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               setActiveDrawer(activeDrawer === 'chat' ? null : 'chat');
               setUnreadChatCount(0);
             }}
-            className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+            className={`relative flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
               activeDrawer === 'chat'
                 ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
                 : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
@@ -1473,6 +1746,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             {unreadChatCount > 0 && activeDrawer !== 'chat' && (
               <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-none bg-[#D4A373] text-[10px] text-[#40382F] font-bold leading-none border border-[#40382F]/20">
                 {unreadChatCount}
+              </span>
+            )}
+          </button>
+
+          {/* Direct Messages Button */}
+          <button
+            onClick={() => {
+              setActiveDrawer(activeDrawer === 'direct-message' ? null : 'direct-message');
+            }}
+            className={`relative flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
+              activeDrawer === 'direct-message'
+                ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F] font-bold'
+                : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
+            }`}
+            title="Private Direct Messages"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-[#40382F]" />
+            <span className="hidden sm:inline">DMs</span>
+            {totalUnreadDms > 0 && activeDrawer !== 'direct-message' && (
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-none bg-rose-500 text-[10px] text-white font-bold leading-none">
+                {totalUnreadDms}
               </span>
             )}
           </button>
@@ -1529,7 +1823,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                     autoPlay
                     playsInline
                     muted
-                    className={`w-full h-full object-cover ${screenSharing ? '' : '-scale-x-100'}`}
+                    className="w-full h-full object-cover -scale-x-100"
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center p-6 text-center">
@@ -1553,7 +1847,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
                   <span className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm text-[10px] font-bold text-[#40382F] border border-[rgba(64,56,47,0.2)] flex items-center space-x-1.5">
                     {isSpeakingLocal && <span className="w-2 h-2 rounded-none bg-emerald-500 animate-pulse"></span>}
-                    <span>You {screenSharing ? '(Screen Sharing)' : ''}</span>
+                    <span>You</span>
                   </span>
 
                   <div className="flex items-center space-x-1">
@@ -1578,6 +1872,26 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   </div>
                 </div>
 
+                {/* Spotify Playing Pill for Local User */}
+                {spotifyStatus.isSharing && spotifyStatus.track?.isPlaying && (
+                  <div className="absolute bottom-8 left-2.5 right-2.5 pointer-events-none">
+                    <a
+                      href={spotifyStatus.track.spotifyUrl || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="pointer-events-auto inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-none bg-[#1DB954]/15 backdrop-blur-sm border border-[#1DB954]/40 text-[10px] text-[#191414] hover:bg-[#1DB954]/25 transition-all max-w-full truncate"
+                      title={`Sharing: ${spotifyStatus.track.trackTitle} by ${spotifyStatus.track.artist || 'Unknown'}`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#1DB954] animate-pulse flex-shrink-0"></span>
+                      <span className="truncate font-semibold">🎵 {spotifyStatus.track.trackTitle}</span>
+                      {spotifyStatus.track.artist && (
+                        <span className="truncate text-[#75695A] hidden sm:inline">• {spotifyStatus.track.artist}</span>
+                      )}
+                      <ExternalLink className="w-2.5 h-2.5 text-[#1DB954] flex-shrink-0 ml-0.5" />
+                    </a>
+                  </div>
+                )}
+
                 {/* Bottom Subject Goal Pill */}
                 <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
                   <div className="px-2 py-0.5 rounded-none bg-[#FEFAE0]/95 backdrop-blur-sm border border-[rgba(64,56,47,0.2)] text-[10px] text-[#40382F] truncate flex items-center space-x-1.5">
@@ -1593,6 +1907,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               const stream = remoteStreams.get(peer.socketId);
               const livekitTrack = livekitRemoteTracks.get(peer.user?.id || peer.socketId);
               const isSpeaking = Boolean(speakingPeers[peer.socketId] || speakingPeers[peer.user?.id]);
+              const peerSpotify = peerSpotifyMap[peer.socketId] || (peer.user?.id ? peerSpotifyMap[peer.user.id] : null) || peer.spotify;
 
               return (
                 <RemoteParticipantTile
@@ -1602,6 +1917,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   livekitTrack={livekitTrack}
                   isSpeaking={isSpeaking}
                   connectionQuality={networkQuality}
+                  spotifyTrack={peerSpotify}
+                  onOpenDm={handleOpenDm}
                 />
               );
             })}
@@ -1672,8 +1989,18 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                         </div>
                       </div>
 
-                      {/* Status Badges */}
+                      {/* Status Badges & DM Action */}
                       <div className="flex items-center space-x-1.5 ml-2 flex-shrink-0">
+                        {!isMe && (
+                          <button
+                            onClick={() => handleOpenDm(p)}
+                            className="p-1 rounded-none bg-[#FEFAE0] hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] hover:text-[#D4A373] text-[10px] transition-all flex items-center space-x-0.5"
+                            title={`Direct message ${p.user?.display_name || 'scholar'}`}
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                            <span className="hidden sm:inline">DM</span>
+                          </button>
+                        )}
                         {hasMic ? (
                           <span className={`p-1 rounded-none border text-[10px] ${isSpeaking ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-[#E9EDC9] text-[#40382F] border-[rgba(64,56,47,0.2)]'}`}>
                             <Mic className="w-3 h-3" />
@@ -1710,13 +2037,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         )}
 
         {/* Drawer: Ambient Sound Synthesizer */}
+        {/* Drawer: Calming Soundscapes Engine (12 Procedural Tracks) */}
         {activeDrawer === 'audio' && (
-          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-5 flex flex-col justify-between z-30 animate-fadeIn">
-            <div>
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-[rgba(64,56,47,0.2)]">
+          <div className="w-84 sm:w-96 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 sm:p-5 flex flex-col justify-between z-30 animate-fadeIn">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)] mb-3">
                 <div className="flex items-center space-x-2">
                   <Sliders className="w-4 h-4 text-[#D4A373]" />
-                  <h3 className="text-sm font-bold text-[#40382F]">Ambient Sound Mixer</h3>
+                  <h3 className="text-sm font-bold text-[#40382F]">Calming Soundscapes</h3>
                 </div>
                 <button
                   onClick={() => setActiveDrawer(null)}
@@ -1726,112 +2054,144 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 </button>
               </div>
 
-              <p className="text-[11px] text-[#75695A] mb-5 font-normal">
-                Synthesized live via WebAudio API. Blend realistic rain, cafe hum, or 10Hz binaural alpha wave for maximum concentration.
+              <p className="text-[11px] text-[#75695A] mb-3 leading-relaxed">
+                12 distinct procedural acoustic soundscapes synthesized directly via Web Audio API. Zero external downloads, instant personal playback.
               </p>
 
-              {/* Rain Slider */}
-              <div className="space-y-4">
-                <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span>🌧️ Rain & Distant Thunder</span>
-                    <span className="text-[#75695A]">{Math.round(ambientVolumes.rain * 100)}%</span>
+              {/* Now Playing Banner (if active) */}
+              {isAudioPlaying && activeSoundId && (
+                <div className="p-3 bg-[#FAEDCD] border border-[#D4A373] rounded-none mb-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F]">
+                    <div className="flex items-center space-x-1.5 truncate">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="truncate">
+                        {SOUND_TRACKS.find(t => t.id === activeSoundId)?.title || 'Playing Soundscape'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#75695A] font-semibold">
+                      {Math.round(soundTrackVol * 100)}%
+                    </span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ambientVolumes.rain}
-                    onChange={(e) => handleVolumeChange('rain', e.target.value)}
-                    className="w-full accent-[#D4A373] cursor-pointer"
-                  />
-                </div>
 
-                {/* Cafe Hum Slider */}
-                <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span>☕ Cozy Cafe & Chatter</span>
-                    <span className="text-[#75695A]">{Math.round(ambientVolumes.cafe * 100)}%</span>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={soundTrackVol}
+                      onChange={(e) => handleSoundTrackVol(e.target.value)}
+                      className="flex-1 accent-[#D4A373] cursor-pointer"
+                      title="Track Volume"
+                    />
+                    <button
+                      onClick={() => handleToggleSound(activeSoundId)}
+                      className="px-2 py-1 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-[10px] font-bold"
+                    >
+                      Pause
+                    </button>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ambientVolumes.cafe}
-                    onChange={(e) => handleVolumeChange('cafe', e.target.value)}
-                    className="w-full accent-[#D4A373] cursor-pointer"
-                  />
                 </div>
+              )}
 
-                {/* Binaural 10Hz Alpha Focus Slider */}
-                <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span>🧠 10Hz Alpha Binaural Wave</span>
-                    <span className="text-[#75695A]">{Math.round(ambientVolumes.binaural * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ambientVolumes.binaural}
-                    onChange={(e) => handleVolumeChange('binaural', e.target.value)}
-                    className="w-full accent-[#D4A373] cursor-pointer"
-                  />
-                </div>
+              {/* Category Filter Pills */}
+              <div className="flex items-center space-x-1 overflow-x-auto pb-1 mb-3 scrollbar-none text-[10px]">
+                {['All', 'Rain', 'Nature', 'Ocean', 'Lo-fi', 'Piano', 'Ambient', 'White Noise', 'Night Ambience'].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setSoundCategoryFilter(cat)}
+                    className={`px-2 py-1 rounded-none font-semibold whitespace-nowrap border transition-all ${
+                      soundCategoryFilter === cat
+                        ? 'bg-[#D4A373] text-[#40382F] border-[#D4A373] font-bold'
+                        : 'bg-[#FAEDCD] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
 
-                {/* Fireplace Slider */}
-                <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span>🔥 Fireplace Crackle</span>
-                    <span className="text-[#75695A]">{Math.round(ambientVolumes.fire * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ambientVolumes.fire}
-                    onChange={(e) => handleVolumeChange('fire', e.target.value)}
-                    className="w-full accent-[#D4A373] cursor-pointer"
-                  />
-                </div>
+              {/* 12 Soundscape Tracks List */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                {SOUND_TRACKS.filter(t => soundCategoryFilter === 'All' || t.category === soundCategoryFilter).map(track => {
+                  const isCurrent = activeSoundId === track.id;
+                  const isCurrentPlaying = isCurrent && isAudioPlaying;
 
-                {/* Master Volume */}
-                <div className="pt-4 border-t border-[rgba(64,56,47,0.2)]">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1.5">
-                    <span>Master Sound Volume</span>
-                    <span className="text-[#D4A373] font-black">{Math.round(ambientVolumes.master * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ambientVolumes.master}
-                    onChange={(e) => handleVolumeChange('master', e.target.value)}
-                    className="w-full accent-[#D4A373] cursor-pointer"
-                  />
+                  return (
+                    <div
+                      key={track.id}
+                      className={`p-2.5 rounded-none border transition-all ${
+                        isCurrentPlaying
+                          ? 'bg-[#E9EDC9] border-[#D4A373] shadow-sm'
+                          : 'bg-[#FAEDCD] border-[rgba(64,56,47,0.2)] hover:bg-[#F5E6BF]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs font-bold text-[#40382F] truncate">{track.title}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-none bg-[#FEFAE0] text-[#75695A] border border-[rgba(64,56,47,0.2)]">
+                              {track.category}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[#75695A] mt-0.5 line-clamp-2">
+                            {track.description}
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => handleToggleSound(track.id)}
+                          className={`px-3 py-1.5 rounded-none text-[11px] font-bold border transition-all flex items-center space-x-1 flex-shrink-0 ${
+                            isCurrentPlaying
+                              ? 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-800'
+                              : 'bg-[#D4A373] hover:bg-[#C59361] border-[#40382F]/20 text-[#40382F]'
+                          }`}
+                        >
+                          {isCurrentPlaying ? (
+                            <>
+                              <Pause className="w-3 h-3" />
+                              <span>Stop</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Play</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Master Volume */}
+              <div className="pt-3 border-t border-[rgba(64,56,47,0.2)] mt-2">
+                <div className="flex items-center justify-between text-xs font-bold text-[#40382F] mb-1">
+                  <span>Master Volume</span>
+                  <span className="text-[#D4A373] font-black">{Math.round(masterSoundVol * 100)}%</span>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={masterSoundVol}
+                  onChange={(e) => handleMasterSoundVol(e.target.value)}
+                  className="w-full accent-[#D4A373] cursor-pointer"
+                />
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[rgba(64,56,47,0.2)] flex items-center justify-between">
+            <div className="pt-3 border-t border-[rgba(64,56,47,0.2)] flex items-center justify-between mt-2">
               <button
-                onClick={() => {
-                  soundSynthesizer.stopAll();
-                  setAmbientVolumes({ rain: 0, cafe: 0, binaural: 0, fire: 0, master: ambientVolumes.master });
-                }}
+                onClick={handleStopAllSound}
                 className="text-xs text-rose-700 hover:text-rose-800 font-bold"
               >
-                Mute All Sounds
+                Mute Sounds
               </button>
               <button
-                onClick={() => {
-                  soundSynthesizer.playChime();
-                }}
+                onClick={() => soundSynthesizer.playChime()}
                 className="text-xs text-[#D4A373] hover:text-[#B88252] font-bold flex items-center space-x-1"
               >
                 <span>🔔 Test Bell Chime</span>
@@ -1988,15 +2348,250 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             </form>
           </div>
         )}
+
+        {/* Drawer: Spotify Music Sharing */}
+        {activeDrawer === 'spotify' && (
+          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
+                <div className="flex items-center space-x-2">
+                  <Music className="w-4 h-4 text-[#1DB954]" />
+                  <h3 className="text-sm font-bold text-[#40382F]">Spotify Music Sharing</h3>
+                </div>
+                <button
+                  onClick={() => setActiveDrawer(null)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+                <p className="text-[11px] text-[#75695A] leading-relaxed">
+                  Share what you're listening to while you study. Only your current track title and artist are shared—audio continues playing privately in your Spotify app.
+                </p>
+
+                {/* Spotify Account Card */}
+                <div className="p-3 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F]">
+                    <div className="flex items-center space-x-1.5">
+                      <span className={`w-2 h-2 rounded-full ${spotifyStatus.connected ? 'bg-[#1DB954]' : 'bg-[#75695A]'}`}></span>
+                      <span>Spotify Connection</span>
+                    </div>
+                    <span className="text-[10px] text-[#75695A]">
+                      {spotifyStatus.connected ? 'Active' : 'Disconnected'}
+                    </span>
+                  </div>
+
+                  {!spotifyStatus.connected ? (
+                    <button
+                      onClick={handleConnectSpotify}
+                      disabled={isSpotifyLoading}
+                      className="w-full py-2 px-3 rounded-none bg-[#1DB954] hover:bg-[#1aa34a] text-white text-xs font-bold flex items-center justify-center space-x-2 transition-all shadow-none"
+                    >
+                      <Music className="w-3.5 h-3.5" />
+                      <span>{isSpotifyLoading ? 'Connecting...' : 'Connect Spotify Account'}</span>
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="flex items-center justify-between cursor-pointer pt-1 border-t border-[rgba(64,56,47,0.1)]">
+                        <span className="text-xs text-[#40382F] font-semibold">Share playback in study hall</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(spotifyStatus.isSharing)}
+                          onChange={handleToggleSpotifySharing}
+                          className="accent-[#1DB954] cursor-pointer"
+                        />
+                      </label>
+
+                      {spotifyStatus.track?.isPlaying && (
+                        <div className="p-2.5 bg-[#FEFAE0] rounded-none border border-[#1DB954]/30 flex items-center space-x-2.5">
+                          {spotifyStatus.track.albumArt ? (
+                            <img
+                              src={spotifyStatus.track.albumArt}
+                              alt={spotifyStatus.track.trackTitle}
+                              className="w-10 h-10 object-cover rounded-none flex-shrink-0 border border-[#40382F]/10"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-[#1DB954]/20 flex items-center justify-center rounded-none flex-shrink-0">
+                              <Music className="w-5 h-5 text-[#1DB954]" />
+                            </div>
+                          )}
+                          <div className="truncate flex-1">
+                            <p className="text-xs font-bold text-[#40382F] truncate">
+                              {spotifyStatus.track.trackTitle}
+                            </p>
+                            <p className="text-[10px] text-[#75695A] truncate">
+                              {spotifyStatus.track.artist}
+                            </p>
+                            {spotifyStatus.track.spotifyUrl && (
+                              <a
+                                href={spotifyStatus.track.spotifyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[9px] text-[#1DB954] font-semibold hover:underline flex items-center space-x-0.5 mt-0.5"
+                              >
+                                <span>Open in Spotify</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleDisconnectSpotify}
+                        className="text-[11px] text-rose-700 hover:text-rose-800 font-semibold"
+                      >
+                        Disconnect Spotify
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* What peers in this room are playing */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-[#40382F]">Scholars Playing Music</h4>
+                  {participants.filter(p => {
+                    const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
+                    return st && st.isPlaying;
+                  }).length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
+                      No other scholars are sharing music right now.
+                    </div>
+                  ) : (
+                    participants.filter(p => {
+                      const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
+                      return st && st.isPlaying;
+                    }).map(p => {
+                      const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
+                      return (
+                        <div key={p.socketId || p.user?.id} className="p-2 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] flex items-center justify-between text-xs">
+                          <div className="truncate flex-1 mr-2">
+                            <span className="font-bold text-[#40382F] block truncate">{p.user?.display_name || 'Scholar'}</span>
+                            <span className="text-[11px] text-[#75695A] truncate block">🎵 {st.trackTitle} - {st.artist}</span>
+                          </div>
+                          {st.spotifyUrl && (
+                            <a
+                              href={st.spotifyUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 rounded-none bg-[#FEFAE0] hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#1DB954]"
+                              title="Listen on Spotify"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Drawer: 1-to-1 Private Direct Messaging */}
+        {activeDrawer === 'direct-message' && (
+          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
+            <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
+              <div className="flex items-center space-x-2 truncate flex-1 min-w-0">
+                <MessageCircle className="w-4 h-4 text-[#D4A373] flex-shrink-0" />
+                <div className="truncate">
+                  <h3 className="text-sm font-bold text-[#40382F] truncate">
+                    {activeDmRecipient ? activeDmRecipient.user?.display_name || 'Direct Message' : 'Direct Messages'}
+                  </h3>
+                  <span className="text-[10px] text-[#75695A] flex items-center space-x-1">
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>Confidential • Peer to Peer</span>
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveDrawer(null)}
+                className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD] flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Direct Message Body */}
+            {!activeDmRecipient ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <Users className="w-8 h-8 text-[#CCD5AE] mb-2" />
+                <p className="text-xs font-bold text-[#40382F] mb-1">Select a Scholar to Message</p>
+                <p className="text-[11px] text-[#75695A]">
+                  Click the message icon on any participant's video tile or in the Scholars list to start a confidential 1-to-1 chat.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div ref={dmScrollRef} className="flex-1 overflow-y-auto py-3 space-y-3">
+                  <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] text-[11px] text-[#75695A] text-center">
+                    🔒 Messages are private between you and <span className="font-bold text-[#40382F]">{activeDmRecipient.user?.display_name || 'this scholar'}</span>.
+                  </div>
+
+                  {directMessages.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
+                      No direct messages yet. Send a quiet greeting or study tip!
+                    </div>
+                  ) : (
+                    directMessages.map(msg => {
+                      const isMe = msg.sender_id === user?.id || msg.sender_id === socketRef.current?.id;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        >
+                          <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
+                            {isMe ? 'You' : msg.sender_name || activeDmRecipient.user?.display_name || 'Peer'}
+                          </span>
+                          <div
+                            className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
+                              isMe 
+                                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]' 
+                                : 'bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
+                            }`}
+                          >
+                            {msg.message}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <form onSubmit={handleSendDm} className="pt-2 border-t border-[rgba(64,56,47,0.2)]">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      placeholder={`Message ${activeDmRecipient.user?.display_name || 'peer'}...`}
+                      value={dmInput}
+                      onChange={(e) => setDmInput(e.target.value)}
+                      className="flex-1 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-2 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
+                    />
+                    <button
+                      type="submit"
+                      className="p-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] border border-[#40382F]/20 transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom Floating Control Dock */}
       <div className="w-full bg-[#FAEDCD] border-t border-[rgba(64,56,47,0.2)] px-4 py-3 flex items-center justify-between z-30">
         
-        {/* Left: Quick Live Reactions Bar */}
-        <div className="flex items-center space-x-1.5 sm:space-x-2">
+        {/* Left: Quick Live Reactions Bar & Categorized Emoji Picker */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2 relative">
           <span className="text-[11px] font-bold text-[#75695A] hidden md:inline">React:</span>
-          {REACTION_EMOJIS.map(emoji => (
+          {QUICK_REACTION_EMOJIS.map(emoji => (
             <button
               key={emoji}
               onClick={() => handleSendReaction(emoji)}
@@ -2006,6 +2601,70 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               {emoji}
             </button>
           ))}
+
+          {/* Reaction Picker Button */}
+          <div className="relative">
+            <button
+              onClick={() => setIsReactionMenuOpen(!isReactionMenuOpen)}
+              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-none border text-xs sm:text-sm font-bold flex items-center space-x-1 transition-all ${
+                isReactionMenuOpen
+                  ? 'bg-[#CCD5AE] border-[rgba(64,56,47,0.2)] text-[#40382F]'
+                  : 'bg-[#FEFAE0] hover:bg-[#E9EDC9] border-[rgba(64,56,47,0.2)] text-[#75695A]'
+              }`}
+              title="More Reactions"
+            >
+              <Smile className="w-4 h-4 text-[#D4A373]" />
+              <span className="hidden sm:inline">+</span>
+            </button>
+
+            {/* Reaction Picker Popover */}
+            {isReactionMenuOpen && (
+              <div className="absolute bottom-12 left-0 w-72 bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] p-3 shadow-lg z-50 animate-fadeIn">
+                <div className="flex items-center justify-between pb-2 border-b border-[rgba(64,56,47,0.2)] mb-2">
+                  <span className="text-xs font-bold text-[#40382F]">Send a Reaction</span>
+                  <button
+                    onClick={() => setIsReactionMenuOpen(false)}
+                    className="text-[#75695A] hover:text-[#40382F] text-xs font-bold p-0.5"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Category tabs */}
+                <div className="flex items-center space-x-1 overflow-x-auto pb-1 mb-2 scrollbar-none text-[10px]">
+                  {Object.keys(REACTION_CATEGORIES).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedReactionCategory(cat)}
+                      className={`px-2 py-0.5 rounded-none font-bold whitespace-nowrap border ${
+                        selectedReactionCategory === cat
+                          ? 'bg-[#D4A373] text-[#40382F] border-[#D4A373]'
+                          : 'bg-[#FAEDCD] text-[#75695A] border-[rgba(64,56,47,0.2)]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Emoji grid for selected category */}
+                <div className="grid grid-cols-4 gap-2">
+                  {REACTION_CATEGORIES[selectedReactionCategory].map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleSendReaction(emoji);
+                        setIsReactionMenuOpen(false);
+                      }}
+                      className="p-2 text-xl rounded-none bg-[#FAEDCD] hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] transition-transform hover:scale-110 flex items-center justify-center"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Center: Essential AV Controls & Push-to-Talk Indicator */}
@@ -2043,24 +2702,6 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             </button>
             <span className="text-[9px] text-[#75695A] font-semibold mt-1 hidden sm:block">
               {videoActive ? 'Camera On' : 'Camera Off'}
-            </span>
-          </div>
-
-          {/* Screen Share */}
-          <div className="relative flex flex-col items-center">
-            <button
-              onClick={toggleScreenShare}
-              className={`p-3 rounded-none flex items-center justify-center transition-all border ${
-                screenSharing
-                  ? 'bg-[#CCD5AE] text-[#40382F] border-[rgba(64,56,47,0.2)]'
-                  : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
-              }`}
-              title={screenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
-            >
-              <ScreenShare className="w-5 h-5" />
-            </button>
-            <span className="text-[9px] text-[#75695A] font-semibold mt-1 hidden sm:block">
-              {screenSharing ? 'Sharing' : 'Screen'}
             </span>
           </div>
         </div>

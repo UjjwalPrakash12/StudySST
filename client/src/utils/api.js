@@ -239,4 +239,53 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // 1-to-1 Private Direct Messaging
+  async getDirectMessages(recipientId, roomId = null) {
+    const url = roomId 
+      ? `${BASE_URL}/direct-messages/${recipientId}?roomId=${encodeURIComponent(roomId)}` 
+      : `${BASE_URL}/direct-messages/${recipientId}`;
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  // Spotify Music Sharing
+  async getSpotifyAuthUrl() {
+    const res = await fetch(`${BASE_URL}/spotify/auth-url`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async getSpotifyStatus() {
+    const res = await fetch(`${BASE_URL}/spotify/status`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async toggleSpotifySharing() {
+    const res = await fetch(`${BASE_URL}/spotify/toggle-sharing`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async disconnectSpotify() {
+    const res = await fetch(`${BASE_URL}/spotify/disconnect`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async getSpotifyCurrentTrack() {
+    const res = await fetch(`${BASE_URL}/spotify/current-track`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
 };

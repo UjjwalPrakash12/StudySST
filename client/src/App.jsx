@@ -8,7 +8,6 @@ import AnalyticsView from './components/AnalyticsView';
 import LeaderboardView from './components/LeaderboardView';
 import BlogCommunityView from './components/BlogCommunityView';
 import AuthModal from './components/AuthModal';
-import CreateRoomModal from './components/CreateRoomModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
 function AppContent() {
@@ -17,7 +16,6 @@ function AppContent() {
   const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'blogs' | 'analytics' | 'leaderboard'
   const [activeRoom, setActiveRoom] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
 
   useEffect(() => {
     updatePresenceView(currentView, activeRoom ? activeRoom.id : null);
@@ -31,11 +29,6 @@ function AppContent() {
   const handleLeaveRoom = () => {
     setActiveRoom(null);
     setCurrentView('lobby');
-  };
-
-  const handleRoomCreated = (newRoom) => {
-    setActiveRoom(newRoom);
-    setCurrentView('room');
   };
 
   return (
@@ -54,13 +47,6 @@ function AppContent() {
         {currentView === 'lobby' && (
           <LobbyView
             onJoinRoom={handleJoinRoom}
-            onOpenCreateRoom={() => {
-              if (!isAuthenticated) {
-                setIsAuthOpen(true);
-              } else {
-                setIsCreateRoomOpen(true);
-              }
-            }}
             onOpenAuth={() => setIsAuthOpen(true)}
             isAuthenticated={isAuthenticated}
           />
@@ -120,12 +106,6 @@ function AppContent() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-      />
-
-      <CreateRoomModal
-        isOpen={isCreateRoomOpen}
-        onClose={() => setIsCreateRoomOpen(false)}
-        onRoomCreated={handleRoomCreated}
       />
     </div>
   );
