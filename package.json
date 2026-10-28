@@ -7,9 +7,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
-    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
-    "postinstall": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
-    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install --include=dev",
+    "postinstall": "npm --prefix client install --include=dev && npm --prefix client run build && npm --prefix server install",
+    "build": "npm --prefix client install --include=dev && npm --prefix client run build && npm --prefix server install",
     "start": "node server.js"
   },
   "dependencies": {
