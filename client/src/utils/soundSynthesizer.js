@@ -317,6 +317,22 @@ class SoundSynthesizer {
     }
   }
 
+  getTrackVolume() {
+    return this.trackVolume !== undefined ? this.trackVolume : 0.5;
+  }
+
+  getMasterVolume() {
+    return this.masterVolume !== undefined ? this.masterVolume : 0.7;
+  }
+
+  getIsPlaying() {
+    return Boolean(this.isPlaying);
+  }
+
+  stopTrack() {
+    this.pauseTrack();
+  }
+
   // ==========================================
   // Individual Procedural Sound Synthesizers
   // ==========================================

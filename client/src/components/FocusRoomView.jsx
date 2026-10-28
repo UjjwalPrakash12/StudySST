@@ -285,10 +285,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const activeDrawerRef = useRef(null);
 
   // Procedural Soundscapes Engine (12 tracks across 8 categories)
-  const [activeSoundId, setActiveSoundId] = useState(() => soundSynthesizer.getActiveTrack()?.id || null);
-  const [soundTrackVol, setSoundTrackVol] = useState(() => soundSynthesizer.getTrackVolume());
-  const [masterSoundVol, setMasterSoundVol] = useState(() => soundSynthesizer.getMasterVolume());
-  const [isAudioPlaying, setIsAudioPlaying] = useState(() => soundSynthesizer.isPlaying());
+  const [activeSoundId, setActiveSoundId] = useState(() => soundSynthesizer.getActiveTrack?.()?.id || 'gentle-rain');
+  const [soundTrackVol, setSoundTrackVol] = useState(() => (typeof soundSynthesizer.getTrackVolume === 'function' ? soundSynthesizer.getTrackVolume() : (soundSynthesizer.trackVolume ?? 0.5)));
+  const [masterSoundVol, setMasterSoundVol] = useState(() => (typeof soundSynthesizer.getMasterVolume === 'function' ? soundSynthesizer.getMasterVolume() : (soundSynthesizer.masterVolume ?? 0.7)));
+  const [isAudioPlaying, setIsAudioPlaying] = useState(() => (typeof soundSynthesizer.getIsPlaying === 'function' ? soundSynthesizer.getIsPlaying() : Boolean(soundSynthesizer.isPlaying)));
   const [soundCategoryFilter, setSoundCategoryFilter] = useState('All');
 
   // Spotify Opt-in Music Sharing
@@ -1472,7 +1472,13 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   // Calming Soundscapes Procedural Engine Handlers
   const handleToggleSound = (trackId) => {
     if (activeSoundId === trackId && isAudioPlaying) {
-      soundSynthesizer.stopTrack();
+      if (typeof soundSynthesizer.stopTrack === 'function') {
+        soundSynthesizer.stopTrack();
+      } else if (typeof soundSynthesizer.pauseTrack === 'function') {
+        soundSynthesizer.pauseTrack();
+      } else {
+        soundSynthesizer.stopAll();
+      }
       setIsAudioPlaying(false);
     } else {
       soundSynthesizer.playTrack(trackId);

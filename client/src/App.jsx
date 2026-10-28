@@ -10,6 +10,41 @@ import BlogCommunityView from './components/BlogCommunityView';
 import AuthModal from './components/AuthModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
+class RoomErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('Study room runtime error caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="max-w-xl mx-auto my-20 p-8 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] text-center">
+          <h2 className="text-xl font-bold text-[#40382F] mb-2">Notice: Study Hall Temporarily Unavailable</h2>
+          <p className="text-xs text-[#75695A] mb-6">
+            An unexpected error occurred while connecting to this study hall.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              this.props.onReset?.();
+            }}
+            className="px-6 py-2.5 bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-xs border border-[#40382F]/20 transition-all"
+          >
+            Return to Study Lobby
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AppContent() {
   const { isAuthenticated } = useAuth();
   const { updatePresenceView } = usePresence();
@@ -59,10 +94,12 @@ function AppContent() {
         )}
 
         {currentView === 'room' && activeRoom && (
-          <FocusRoomView
-            room={activeRoom}
-            onLeaveRoom={handleLeaveRoom}
-          />
+          <RoomErrorBoundary onReset={handleLeaveRoom}>
+            <FocusRoomView
+              room={activeRoom}
+              onLeaveRoom={handleLeaveRoom}
+            />
+          </RoomErrorBoundary>
         )}
 
         {currentView === 'analytics' && (
