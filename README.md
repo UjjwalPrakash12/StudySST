@@ -4,7 +4,15 @@
 > **Course / Program:** Advanced Software Development & System Design  
 > **Submission Deadline:** 27 October 2026, 11:59 PM IST  
 > **Official Form Submission:** [Google Form](https://forms.gle/sBy4sfqyiRG2Zpom9)  
+> **Project Walkthrough & Video Demonstration:** [Watch Video on Google Drive](https://drive.google.com/file/d/1hPIPdMF8TKHNjSq7-3352B8BXfBbK2tk/view?usp=drive_link)  
+> **Live Website:** [https://study-sst.vercel.app/](https://study-sst.vercel.app/)  
 > **License:** [MIT License](LICENSE)
+
+---
+
+> 🎥 **Website Walkthrough & Explanation Video:**  
+> **[Watch the full video demonstration explaining StudySST](https://drive.google.com/file/d/1hPIPdMF8TKHNjSq7-3352B8BXfBbK2tk/view?usp=drive_link)**  
+> *(Explains the live study rooms, WebRTC video architecture, hardware-level privacy, procedural ambient soundscapes, live hour leaderboard, 1-to-1 direct messaging, Spotify sharing, and knowledge blog platform)*
 
 ---
 
@@ -187,15 +195,19 @@ Repository:
 https://github.com/UjjwalPrakash12/StudySST
 
 Live Application:
-http://localhost:5050
+https://study-sst.vercel.app/
+
+Project Walkthrough & Video Demonstration:
+https://drive.google.com/file/d/1hPIPdMF8TKHNjSq7-3352B8BXfBbK2tk/view?usp=drive_link
 
 Primary Features:
 1. Virtual Focus Study Halls with low-latency WebRTC peer video and hardware sensor release.
 2. Community Blogs Feed with rich formatting, image uploads, likes, and comment threads.
 3. Unlimited Live Hours Leaderboard with anti-cheat verified heartbeat time accrual.
-4. Algorithmic Web Audio ambient synthesizer (Rain, Cafe, 10Hz Alpha Waves, Campfire).
-5. Global Light / Dark Mode with cohesive 5-color earthy palette and system auto-detect.
-6. Dual Authentication with Email/Password and 1-Click Firebase Google Sign-In.
+4. Algorithmic Web Audio ambient synthesizer (12 procedural acoustic soundscapes).
+5. 1-to-1 Private Direct Messaging and Spotify music playback sharing.
+6. Global Light / Dark Mode with cohesive 5-color earthy palette and system auto-detect.
+7. Dual Authentication with Email/Password and 1-Click Firebase Google Sign-In.
 ```
 
 ---
