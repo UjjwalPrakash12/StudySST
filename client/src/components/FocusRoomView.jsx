@@ -720,7 +720,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
     // Check LiveKit SFU support
     async function initSFU() {
       try {
-        const res = await api.getLiveKitToken(room.id, user?.display_name, user?.id);
+        const res = await api.getLiveKitToken(room.id, user?.display_name, user?.id, room.roomToken || null);
         if (res.sfuEnabled && res.token && res.url) {
           const lkRoom = new LivekitRoom({
             adaptiveStream: true,
@@ -867,7 +867,18 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
       user: currentUserData,
       mediaState: { mic: false, video: isAuthenticated ? videoActive : false },
       statusText,
-      spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null
+      spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null,
+      roomToken: room.roomToken || null
+    });
+
+    socket.on('room-error', ({ message }) => {
+      alert(message || 'Unable to join room.');
+      onLeaveRoom?.();
+    });
+
+    socket.on('room-access-denied', ({ reason }) => {
+      alert(reason || 'Access denied to this protected room.');
+      onLeaveRoom?.();
     });
 
     socket.on('media-denied', ({ error }) => {

@@ -1076,6 +1076,27 @@ app.get('/api/livekit/token', optionalAuthenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'roomId parameter is required' });
     }
 
+    // Password-protected room authorization verification
+    const roomRecord = db.prepare('SELECT id, is_private, passcode FROM rooms WHERE id = ?').get(roomId);
+    if (roomRecord && Boolean(roomRecord.is_private)) {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required for protected rooms' });
+      }
+      const roomToken = req.headers['x-room-token'] || req.query.roomToken;
+      let authorized = false;
+      if (roomToken) {
+        try {
+          const decoded = jwt.verify(roomToken, JWT_SECRET);
+          if (decoded && decoded.roomId === roomId && decoded.access === 'granted') {
+            authorized = true;
+          }
+        } catch (e) {}
+      }
+      if (!authorized) {
+        return res.status(403).json({ error: 'Incorrect room password or authorization required' });
+      }
+    }
+
     const participantIdentity = req.user 
       ? req.user.id 
       : (req.query.userId || 'guest-' + crypto.randomUUID().slice(0, 8));
@@ -1114,8 +1135,16 @@ app.get('/api/livekit/token', optionalAuthenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// API Routes: Study Rooms
+// API Routes: Study Rooms (Max 50 Rooms, Public + Password-Protected)
 // ==========================================
+const PREDEFINED_ROOM_IDS = new Set([
+  'room-silent-library',
+  'room-lofi-cafe',
+  'room-stem-sprint',
+  'room-med-mcat',
+  'room-creative-studio'
+]);
+
 function getAccurateRoomOnlineCount(roomId) {
   const roomState = activeRooms.get(roomId);
   if (!roomState) return 0;
@@ -1131,14 +1160,24 @@ function getAccurateRoomOnlineCount(roomId) {
 
 app.get('/api/rooms', (req, res) => {
   try {
-    const rooms = db.prepare('SELECT * FROM rooms ORDER BY created_at ASC').all();
+    // Explicitly exclude passcode/hash to never expose room credentials
+    const rooms = db.prepare(`
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      FROM rooms ORDER BY created_at ASC
+    `).all();
 
     const enrichedRooms = rooms.map(room => ({
       ...room,
+      is_private: Boolean(room.is_private),
+      isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
       onlineCount: getAccurateRoomOnlineCount(room.id),
     }));
 
-    res.json({ rooms: enrichedRooms });
+    res.json({
+      rooms: enrichedRooms,
+      totalCount: enrichedRooms.length,
+      maxRooms: 50
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch rooms' });
   }
@@ -1146,50 +1185,183 @@ app.get('/api/rooms', (req, res) => {
 
 app.get('/api/rooms/:id', (req, res) => {
   try {
-    const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(req.params.id);
+    const room = db.prepare(`
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      FROM rooms WHERE id = ?
+    `).get(req.params.id);
+
     if (!room) {
       return res.status(404).json({ error: 'Room not found' });
     }
 
-    res.json({ room: { ...room, onlineCount: getAccurateRoomOnlineCount(room.id) } });
+    res.json({
+      room: {
+        ...room,
+        is_private: Boolean(room.is_private),
+        isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
+        onlineCount: getAccurateRoomOnlineCount(room.id)
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch room' });
   }
 });
 
 app.post('/api/rooms', authenticateToken, (req, res) => {
+  let inTransaction = false;
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only administrators can create study rooms' });
-    }
-    const { name, description, category, bgTheme, isPrivate, passcode } = req.body;
+    const { name, description, category, visibility, password, bgTheme } = req.body;
 
-    if (!name || !category) {
-      return res.status(400).json({ error: 'Room name and category are required' });
+    const trimmedName = (name || '').trim();
+    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 60) {
+      return res.status(400).json({ error: 'Room name must be between 3 and 60 characters.' });
     }
 
-    const roomId = 'room-' + crypto.randomUUID().slice(0, 8);
+    const trimmedCategory = (category || 'Silent Study').trim();
+    const validCategories = [
+      'Silent Study',
+      'Lofi & Casual',
+      'Engineering & STEM',
+      'Medical & Science',
+      'Creativity & Arts'
+    ];
+    const finalCategory = validCategories.includes(trimmedCategory) ? trimmedCategory : 'Silent Study';
 
-    db.prepare(`
+    const trimmedDesc = (description || '').trim();
+    if (trimmedDesc.length > 250) {
+      return res.status(400).json({ error: 'Room description must not exceed 250 characters.' });
+    }
+
+    const isPrivate = visibility === 'password' || visibility === 'protected' || req.body.isPrivate === true || Boolean(password && password.trim());
+    let passwordHash = null;
+
+    if (isPrivate) {
+      const rawPassword = (password || '').trim();
+      if (!rawPassword || rawPassword.length < 4 || rawPassword.length > 64) {
+        return res.status(400).json({ error: 'Password is required for protected rooms (between 4 and 64 characters).' });
+      }
+      passwordHash = bcrypt.hashSync(rawPassword, 10);
+    }
+
+    // Atomic transaction: strictly verify total room count < 50
+    db.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
+
+    const currentCount = db.prepare('SELECT COUNT(*) as count FROM rooms').get().count;
+    if (currentCount >= 50) {
+      db.exec('ROLLBACK');
+      inTransaction = false;
+      return res.status(400).json({
+        error: 'StudySST has reached its limit of 50 rooms. Please join an existing room.'
+      });
+    }
+
+    const roomId = 'room-' + crypto.randomUUID().slice(0, 10);
+    const insertStmt = db.prepare(`
       INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, passcode, created_by)
-      VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
-    `).run(
+      SELECT ?, ?, ?, ?, 25, 5, ?, ?, ?, ?
+      WHERE (SELECT COUNT(*) FROM rooms) < 50;
+    `);
+
+    const result = insertStmt.run(
       roomId,
-      name.trim(),
-      description ? description.trim() : '',
-      category.trim(),
+      trimmedName,
+      trimmedDesc,
+      finalCategory,
       bgTheme || 'cosmic',
       isPrivate ? 1 : 0,
-      passcode ? passcode.trim() : null,
+      passwordHash,
       req.user.id
     );
 
-    const createdRoom = db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId);
+    if (result.changes === 0) {
+      db.exec('ROLLBACK');
+      inTransaction = false;
+      return res.status(400).json({
+        error: 'StudySST has reached its limit of 50 rooms. Please join an existing room.'
+      });
+    }
+
+    db.exec('COMMIT');
+    inTransaction = false;
+
+    // Fetch created room safely without passcode
+    const createdRoom = db.prepare(`
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      FROM rooms WHERE id = ?
+    `).get(roomId);
+
     syncRoomToMongo(createdRoom);
-    res.status(201).json({ room: { ...createdRoom, onlineCount: 0 } });
+
+    const safeRoom = {
+      ...createdRoom,
+      is_private: Boolean(createdRoom.is_private),
+      isPredefined: false,
+      onlineCount: 0
+    };
+
+    io.emit('rooms-updated', {
+      action: 'created',
+      room: safeRoom
+    });
+
+    res.status(201).json({
+      message: 'Room created successfully',
+      room: safeRoom
+    });
   } catch (error) {
+    if (inTransaction) {
+      try { db.exec('ROLLBACK'); } catch (e) {}
+    }
     console.error('Error creating room:', error);
     res.status(500).json({ error: 'Failed to create room' });
+  }
+});
+
+// Verify room password and issue signed room-access token
+app.post('/api/rooms/:id/verify-password', authenticateToken, (req, res) => {
+  try {
+    const roomId = req.params.id;
+    const { password } = req.body;
+
+    const room = db.prepare('SELECT id, is_private, passcode FROM rooms WHERE id = ?').get(roomId);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    if (!room.is_private) {
+      const roomToken = jwt.sign(
+        { roomId: room.id, access: 'granted', userId: req.user.id },
+        JWT_SECRET,
+        { expiresIn: '12h' }
+      );
+      return res.json({ success: true, roomToken });
+    }
+
+    const rawPassword = (password || '').trim();
+    if (!rawPassword || !room.passcode) {
+      return res.status(401).json({ error: 'Incorrect room password' });
+    }
+
+    const matches = bcrypt.compareSync(rawPassword, room.passcode);
+    if (!matches) {
+      return res.status(401).json({ error: 'Incorrect room password' });
+    }
+
+    const roomToken = jwt.sign(
+      { roomId: room.id, access: 'granted', userId: req.user.id },
+      JWT_SECRET,
+      { expiresIn: '12h' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Password verified',
+      roomToken
+    });
+  } catch (error) {
+    console.error('Password verification error:', error);
+    res.status(500).json({ error: 'Failed to verify room password' });
   }
 });
 
@@ -1767,12 +1939,11 @@ io.on('connection', (socket) => {
   });
 
   // 1. Join Room & Start Authoritative Live Time Tracking
-  socket.on('join-room', ({ roomId, user, mediaState, statusText, spotify }) => {
+  socket.on('join-room', ({ roomId, user, mediaState, statusText, spotify, roomToken, roomPassword }) => {
     // If client was already in another room, clean up previous room first
     if (currentRoomId && currentRoomId !== roomId) {
       handleLeave(socket, currentRoomId);
     }
-    currentRoomId = roomId;
 
     // Check if token was provided in user payload if not yet verified
     if (!isAuthenticatedUser && user && user.token) {
@@ -1805,6 +1976,50 @@ io.on('connection', (socket) => {
       // GUESTS MUST NEVER HAVE MIC OR VIDEO ACTIVE
       mediaState = { mic: false, video: false };
     }
+
+    // Check if room is private / password protected
+    try {
+      const roomRecord = db.prepare('SELECT id, is_private, passcode FROM rooms WHERE id = ?').get(roomId);
+      if (roomRecord && Boolean(roomRecord.is_private)) {
+        if (!isAuthenticatedUser || currentUser.isGuest) {
+          socket.emit('room-access-denied', {
+            roomId,
+            reason: 'Authentication required. Guests cannot enter password-protected rooms.'
+          });
+          return;
+        }
+
+        let authorized = false;
+        const candidateToken = roomToken || (user && user.roomToken);
+        if (candidateToken) {
+          try {
+            const decoded = jwt.verify(candidateToken, JWT_SECRET);
+            if (decoded && decoded.roomId === roomId && decoded.access === 'granted') {
+              authorized = true;
+            }
+          } catch (e) {}
+        }
+
+        const candidatePassword = roomPassword || (user && user.roomPassword);
+        if (!authorized && candidatePassword && roomRecord.passcode) {
+          if (bcrypt.compareSync(candidatePassword, roomRecord.passcode)) {
+            authorized = true;
+          }
+        }
+
+        if (!authorized) {
+          socket.emit('room-access-denied', {
+            roomId,
+            reason: 'Incorrect room password or authorization required.'
+          });
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Error checking room permissions on join-room:', err);
+    }
+
+    currentRoomId = roomId;
 
     // Update presence record with current roomId
     const vId = socketToVisitor.get(socket.id);

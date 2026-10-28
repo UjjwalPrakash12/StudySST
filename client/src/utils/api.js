@@ -88,13 +88,27 @@ export const api = {
     return handleResponse(res);
   },
 
-  async getLiveKitToken(roomId, username, userId) {
+  async verifyRoomPassword(roomId, password) {
+    const res = await fetch(`${BASE_URL}/rooms/${roomId}/verify-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ password }),
+    });
+    return handleResponse(res);
+  },
+
+  async getLiveKitToken(roomId, username, userId, roomToken = null) {
     const params = new URLSearchParams();
     if (roomId) params.append('roomId', roomId);
     if (username) params.append('username', username);
     if (userId) params.append('userId', userId);
+    if (roomToken) params.append('roomToken', roomToken);
+    const headers = getAuthHeaders();
+    if (roomToken) {
+      headers['x-room-token'] = roomToken;
+    }
     const res = await fetch(`${BASE_URL}/livekit/token?${params.toString()}`, {
-      headers: getAuthHeaders(),
+      headers,
     });
     return handleResponse(res);
   },

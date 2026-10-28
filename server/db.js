@@ -179,19 +179,24 @@ try {
   db.exec("ALTER TABLE users ADD COLUMN google_id TEXT;");
 } catch (e) {}
 
-// Seed default rooms if empty
-const roomCount = db.prepare('SELECT COUNT(*) as count FROM rooms').get().count;
-if (roomCount === 0) {
-  const insertRoom = db.prepare(`
-    INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-  `);
+// Seed default 5 predefined public rooms if missing
+const PREDEFINED_ROOMS = [
+  { id: 'room-silent-library', name: 'Silent Library - Deep Work', description: 'Strict quiet zone for laser focus. Cameras encouraged, microphones muted.', category: 'Silent Study', bg_theme: 'library' },
+  { id: 'room-lofi-cafe', name: 'Lofi Cafe & Chill Beats', description: 'Warm, relaxed atmosphere with ambient coffee shop vibes for reading and writing.', category: 'Lofi & Casual', bg_theme: 'cafe' },
+  { id: 'room-stem-sprint', name: 'STEM, Code & Math Grind', description: 'Software engineering, competitive programming, math proofs, and algorithms.', category: 'Engineering & STEM', bg_theme: 'code' },
+  { id: 'room-med-mcat', name: 'Med School & High-Yield Sprint', description: 'Anki flashcards, USMLE, biology, and chemistry. Serious long study blocks.', category: 'Medical & Science', bg_theme: 'med' },
+  { id: 'room-creative-studio', name: 'Creative Studio & Design Hub', description: 'UI/UX design, writing, digital art, video editing, and project planning.', category: 'Creativity & Arts', bg_theme: 'creative' }
+];
 
-  insertRoom.run('room-silent-library', 'Silent Library - Deep Work', 'Strict quiet zone for laser focus. Cameras encouraged, microphones muted.', 'Silent Study', 25, 5, 'library');
-  insertRoom.run('room-lofi-cafe', 'Lofi Cafe & Chill Beats', 'Warm, relaxed atmosphere with ambient coffee shop vibes for reading and writing.', 'Lofi & Casual', 25, 5, 'cafe');
-  insertRoom.run('room-stem-sprint', 'STEM, Code & Math Grind', 'Software engineering, competitive programming, math proofs, and algorithms.', 'Engineering & STEM', 50, 10, 'code');
-  insertRoom.run('room-med-mcat', 'Med School & High-Yield Sprint', 'Anki flashcards, USMLE, biology, and chemistry. Serious long study blocks.', 'Medical & Science', 50, 10, 'med');
-  insertRoom.run('room-creative-studio', 'Creative Studio & Design Hub', 'UI/UX design, writing, digital art, video editing, and project planning.', 'Creativity & Arts', 25, 5, 'creative');
+for (const p of PREDEFINED_ROOMS) {
+  const exists = db.prepare('SELECT id FROM rooms WHERE id = ?').get(p.id);
+  if (!exists) {
+    db.prepare(`
+      INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, passcode, created_by)
+      VALUES (?, ?, ?, ?, 25, 5, ?, 0, null, 'system')
+    `).run(p.id, p.name, p.description, p.category, p.bg_theme);
+  }
 }
+
 module.exports = db;
 
