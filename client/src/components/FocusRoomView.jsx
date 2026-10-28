@@ -13,7 +13,7 @@ import {
   MessageSquare, MessageCircle, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
   Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff,
-  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen
+  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen, UserX, Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -879,6 +879,15 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
     socket.on('room-access-denied', ({ reason }) => {
       alert(reason || 'Access denied to this protected room.');
       onLeaveRoom?.();
+    });
+
+    socket.on('kicked-by-admin', ({ reason }) => {
+      alert(reason || 'You have been removed from this room by the Super Admin.');
+      onLeaveRoom?.();
+    });
+
+    socket.on('message-deleted', ({ messageId }) => {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
     });
 
     socket.on('media-denied', ({ error }) => {
@@ -2351,6 +2360,25 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
                             <span className="hidden sm:inline">DM</span>
                           </button>
                         )}
+                        {!isMe && (user?.isSuperAdmin || user?.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Kick ${p.user?.display_name || 'scholar'} out of this room?`)) {
+                                socketRef.current?.emit('admin-kick-participant', {
+                                  roomId: room.id,
+                                  targetUserId: p.user?.id,
+                                  targetSocketId: p.socketId,
+                                  reason: 'Removed by Super Admin'
+                                });
+                              }
+                            }}
+                            className="p-1 rounded-none bg-red-100 hover:bg-red-200 border border-red-300 text-red-800 text-[10px] font-bold transition-all flex items-center space-x-0.5"
+                            title="Super Admin: Kick scholar from hall"
+                          >
+                            <UserX className="w-3 h-3 text-red-600" />
+                            <span className="hidden sm:inline">Kick</span>
+                          </button>
+                        )}
                         {hasMic ? (
                           <span className={`p-1 rounded-none border text-[10px] ${isSpeaking ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-[#E9EDC9] text-[#40382F] border-[rgba(64,56,47,0.2)]'}`}>
                             <Mic className="w-3 h-3" />
@@ -2686,14 +2714,29 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
                           <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
                             {isMe ? 'You' : msg.user?.display_name || 'Peer'}
                           </span>
-                          <div
-                            className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
-                              isMe 
-                                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]' 
-                                : 'bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
-                            }`}
-                          >
-                            {msg.text}
+                          <div className="flex items-center space-x-1 group">
+                            <div
+                              className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
+                                isMe 
+                                  ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]' 
+                                  : 'bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
+                              }`}
+                            >
+                              {msg.text}
+                            </div>
+                            {(user?.isSuperAdmin || user?.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('Delete this message for all participants?')) {
+                                    socketRef.current?.emit('admin-delete-chat', { roomId: room.id, messageId: msg.id });
+                                  }
+                                }}
+                                className="opacity-60 hover:opacity-100 p-1 text-[#75695A] hover:text-red-600 transition-opacity"
+                                title="Super Admin: Delete message"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );

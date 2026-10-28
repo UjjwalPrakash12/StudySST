@@ -7,6 +7,7 @@ import FocusRoomView from './components/FocusRoomView';
 import AnalyticsView from './components/AnalyticsView';
 import LeaderboardView from './components/LeaderboardView';
 import BlogCommunityView from './components/BlogCommunityView';
+import AdminView from './components/AdminView';
 import AuthModal from './components/AuthModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
@@ -111,6 +112,12 @@ function AppContent() {
 
         {currentView === 'leaderboard' && (
           <LeaderboardView />
+        )}
+
+        {currentView === 'admin' && (
+          <AdminView
+            onJoinRoom={handleJoinRoom}
+          />
         )}
       </main>
 

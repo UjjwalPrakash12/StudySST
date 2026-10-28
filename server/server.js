@@ -440,9 +440,28 @@ cleanupStaleSessions();
 // ==========================================
 // Authentication Middleware & Helpers
 // ==========================================
+const SUPER_ADMIN_EMAIL = 'ujjwalprakash1812@gmail.com';
+
+function isSuperAdminEmail(email) {
+  return typeof email === 'string' && email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+}
+
+function isSuperAdminUser(user) {
+  if (!user || !user.email) return false;
+  return isSuperAdminEmail(user.email);
+}
+
 function generateToken(user) {
+  const isSuperAdmin = isSuperAdminEmail(user.email);
+  const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
   return jwt.sign(
-    { id: user.id, username: user.username, email: user.email, role: user.role || 'user' },
+    {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: effectiveRole,
+      isSuperAdmin: isSuperAdmin
+    },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -460,6 +479,16 @@ function authenticateToken(req, res, next) {
     if (err) {
       return res.status(403).json({ error: 'Invalid or expired token' });
     }
+    // Check if user account is suspended in database
+    const dbUser = db.prepare('SELECT id, email, is_suspended FROM users WHERE id = ?').get(decoded.id);
+    if (dbUser && dbUser.is_suspended) {
+      return res.status(403).json({ error: 'Your account has been suspended by an administrator.' });
+    }
+    // Strict defense-in-depth: sync effective role with email
+    if (decoded && decoded.email) {
+      decoded.isSuperAdmin = isSuperAdminEmail(decoded.email);
+      decoded.role = decoded.isSuperAdmin ? 'superadmin' : 'user';
+    }
     req.user = decoded;
     next();
   });
@@ -472,8 +501,28 @@ function optionalAuthenticateToken(req, res, next) {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (!err && decoded) {
-      req.user = decoded;
+      const dbUser = db.prepare('SELECT id, email, is_suspended FROM users WHERE id = ?').get(decoded.id);
+      if (!dbUser || !dbUser.is_suspended) {
+        decoded.isSuperAdmin = isSuperAdminEmail(decoded.email);
+        decoded.role = decoded.isSuperAdmin ? 'superadmin' : 'user';
+        req.user = decoded;
+      }
     }
+    next();
+  });
+}
+
+function requireSuperAdmin(req, res, next) {
+  authenticateToken(req, res, () => {
+    // Re-verify strictly against database record to prevent token tampering or client claims
+    const dbUser = db.prepare('SELECT id, username, email, role, is_suspended FROM users WHERE id = ?').get(req.user.id);
+    if (!dbUser || !isSuperAdminEmail(dbUser.email)) {
+      return res.status(403).json({ error: 'Access denied: Super Admin privileges required' });
+    }
+    if (dbUser.is_suspended) {
+      return res.status(403).json({ error: 'Super Admin account is currently suspended' });
+    }
+    req.superAdmin = dbUser;
     next();
   });
 }
@@ -510,17 +559,18 @@ app.post('/api/auth/register', (req, res) => {
 
     db.prepare(`
       INSERT INTO users (id, username, email, password_hash, display_name, avatar_seed, last_active_date, role)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'user')
-    `).run(userId, cleanUsername, cleanEmail, passwordHash, display, avatarSeed, todayStr);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, cleanUsername, cleanEmail, passwordHash, display, avatarSeed, todayStr, isSuperAdminEmail(cleanEmail) ? 'superadmin' : 'user');
 
-    const newUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(userId);
+    const newUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, is_suspended, created_at FROM users WHERE id = ?').get(userId);
+    const isSuperAdmin = isSuperAdminEmail(newUser.email);
     const token = generateToken(newUser);
     syncUserToMongo(newUser);
 
     res.status(201).json({
       message: 'Account registered successfully',
       token,
-      user: newUser
+      user: { ...newUser, isSuperAdmin }
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -543,12 +593,25 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    if (user.is_suspended) {
+      return res.status(403).json({ error: 'Your account has been suspended by an administrator.' });
+    }
+
     const isMatch = bcrypt.compareSync(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    const isSuperAdmin = isSuperAdminEmail(user.email);
+    const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
+    if (user.role !== effectiveRole) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(effectiveRole, user.id);
+      user.role = effectiveRole;
+    }
+
     const { password_hash, ...safeUser } = user;
+    safeUser.role = effectiveRole;
+    safeUser.isSuperAdmin = isSuperAdmin;
     const token = generateToken(safeUser);
 
     res.json({
@@ -570,13 +633,19 @@ app.post('/api/auth/google', async (req, res) => {
       return res.status(400).json({ error: 'Email is required for Google authentication' });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
     // Check if user already exists with this email or google_id
-    let user = db.prepare('SELECT * FROM users WHERE email = ? OR google_id = ?').get(email, uid || '');
+    let user = db.prepare('SELECT * FROM users WHERE email = ? OR google_id = ?').get(cleanEmail, uid || '');
+
+    if (user && user.is_suspended) {
+      return res.status(403).json({ error: 'Your account has been suspended by an administrator.' });
+    }
 
     if (!user) {
       // Create new user for first-time Google signup
       const userId = 'user-' + crypto.randomUUID();
-      const baseUsername = (email.split('@')[0] || 'scholar').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 15);
+      const baseUsername = (cleanEmail.split('@')[0] || 'scholar').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 15);
       
       // Ensure unique username
       let usernameCandidate = baseUsername || 'scholar';
@@ -590,15 +659,16 @@ app.post('/api/auth/google', async (req, res) => {
       const passwordHash = bcrypt.hashSync(randomPassword, salt);
       const userDisplayName = displayName || usernameCandidate;
       const avatarSeed = photoUrl || usernameCandidate;
+      const effectiveRole = isSuperAdminEmail(cleanEmail) ? 'superadmin' : 'user';
 
       db.prepare(`
         INSERT INTO users (
           id, username, email, password_hash, display_name, avatar_seed,
           daily_goal_minutes, total_focus_minutes, total_live_seconds, current_streak, longest_streak, bio, role, google_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, 120, 0, 0, 0, 0, 'Ready to focus and achieve big goals!', 'user', ?)
+        VALUES (?, ?, ?, ?, ?, ?, 120, 0, 0, 0, 0, 'Ready to focus and achieve big goals!', ?, ?)
       `).run(
-        userId, usernameCandidate, email, passwordHash, userDisplayName, avatarSeed, uid || null
+        userId, usernameCandidate, cleanEmail, passwordHash, userDisplayName, avatarSeed, effectiveRole, uid || null
       );
 
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -607,7 +677,16 @@ app.post('/api/auth/google', async (req, res) => {
       db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(uid, user.id);
     }
 
+    const isSuperAdmin = isSuperAdminEmail(user.email);
+    const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
+    if (user.role !== effectiveRole) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(effectiveRole, user.id);
+      user.role = effectiveRole;
+    }
+
     const { password_hash, ...safeUser } = user;
+    safeUser.role = effectiveRole;
+    safeUser.isSuperAdmin = isSuperAdmin;
     const token = generateToken(safeUser);
     syncUserToMongo(user);
 
@@ -624,11 +703,20 @@ app.post('/api/auth/google', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   try {
-    const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, is_suspended, created_at FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json({ user });
+    if (user.is_suspended) {
+      return res.status(403).json({ error: 'Your account has been suspended by an administrator.' });
+    }
+    const isSuperAdmin = isSuperAdminEmail(user.email);
+    const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
+    if (user.role !== effectiveRole) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(effectiveRole, user.id);
+      user.role = effectiveRole;
+    }
+    res.json({ user: { ...user, role: effectiveRole, isSuperAdmin } });
   } catch (error) {
     res.status(500).json({ error: 'Error fetching profile' });
   }
@@ -834,7 +922,8 @@ app.put('/api/blogs/:id', authenticateToken, upload.single('image'), (req, res) 
     if (!blog) return res.status(404).json({ error: 'Blog not found' });
 
     // Authorization check
-    if (blog.author_id !== req.user.id && req.user.role !== 'admin') {
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    if (blog.author_id !== req.user.id && !isSuperAdmin) {
       return res.status(403).json({ error: 'Unauthorized to edit this blog' });
     }
 
@@ -873,7 +962,8 @@ app.delete('/api/blogs/:id', authenticateToken, (req, res) => {
     const blog = db.prepare('SELECT * FROM blogs WHERE id = ?').get(req.params.id);
     if (!blog) return res.status(404).json({ error: 'Blog not found' });
 
-    if (blog.author_id !== req.user.id && req.user.role !== 'admin') {
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    if (blog.author_id !== req.user.id && !isSuperAdmin) {
       return res.status(403).json({ error: 'Unauthorized to delete this blog' });
     }
 
@@ -1010,10 +1100,9 @@ app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, re
     const comment = db.prepare('SELECT * FROM blog_comments WHERE id = ? AND blog_id = ?').get(req.params.commentId, req.params.blogId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
 
-    const blog = db.prepare('SELECT author_id FROM blogs WHERE id = ?').get(req.params.blogId);
-
-    // Can delete if author of comment, owner of the blog, or admin
-    if (comment.user_id !== req.user.id && (blog && blog.author_id !== req.user.id) && req.user.role !== 'admin') {
+    // Can delete if author of comment, owner of the blog, or superadmin
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    if (comment.user_id !== req.user.id && (blog && blog.author_id !== req.user.id) && !isSuperAdmin) {
       return res.status(403).json({ error: 'Unauthorized to delete this comment' });
     }
 
@@ -1078,7 +1167,8 @@ app.get('/api/livekit/token', optionalAuthenticateToken, async (req, res) => {
 
     // Password-protected room authorization verification
     const roomRecord = db.prepare('SELECT id, is_private, passcode FROM rooms WHERE id = ?').get(roomId);
-    if (roomRecord && Boolean(roomRecord.is_private)) {
+    const isSuperAdmin = req.user && isSuperAdminEmail(req.user.email);
+    if (roomRecord && Boolean(roomRecord.is_private) && !isSuperAdmin) {
       if (!req.user) {
         return res.status(401).json({ error: 'Authentication required for protected rooms' });
       }
@@ -1329,13 +1419,14 @@ app.post('/api/rooms/:id/verify-password', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Room not found' });
     }
 
-    if (!room.is_private) {
+    if (!room.is_private || isSuperAdminEmail(req.user.email)) {
+      const isSuperAdmin = isSuperAdminEmail(req.user.email);
       const roomToken = jwt.sign(
-        { roomId: room.id, access: 'granted', userId: req.user.id },
+        { roomId: room.id, access: 'granted', userId: req.user.id, isSuperAdmin },
         JWT_SECRET,
         { expiresIn: '12h' }
       );
-      return res.json({ success: true, roomToken });
+      return res.json({ success: true, roomToken, isSuperAdmin });
     }
 
     const rawPassword = (password || '').trim();
@@ -1362,6 +1453,303 @@ app.post('/api/rooms/:id/verify-password', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Password verification error:', error);
     res.status(500).json({ error: 'Failed to verify room password' });
+  }
+});
+
+// ==========================================
+// SUPER ADMIN MANAGEMENT API ROUTES
+// Protected strictly by requireSuperAdmin
+// ==========================================
+
+app.get('/api/admin/overview', requireSuperAdmin, (req, res) => {
+  try {
+    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    const suspendedUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE is_suspended = 1').get().count;
+    const totalRooms = db.prepare('SELECT COUNT(*) as count FROM rooms').get().count;
+    const totalBlogs = db.prepare('SELECT COUNT(*) as count FROM blogs').get().count;
+    const stats = getPresenceStats();
+
+    res.json({
+      totalUsers,
+      suspendedUsers,
+      totalRooms,
+      maxRooms: 50,
+      totalBlogs,
+      activeScholarsNow: stats.totalActive,
+      serverTime: new Date().toISOString(),
+      superAdminEmail: SUPER_ADMIN_EMAIL
+    });
+  } catch (error) {
+    console.error('Admin overview error:', error);
+    res.status(500).json({ error: 'Failed to load administrative overview' });
+  }
+});
+
+app.get('/api/admin/users', requireSuperAdmin, (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, username, email, display_name, avatar_seed, role, daily_goal_minutes,
+             total_focus_minutes, total_live_seconds, is_live, current_room_id,
+             current_streak, longest_streak, is_suspended, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `).all();
+
+    const safeUsers = users.map(u => ({
+      ...u,
+      isSuperAdmin: isSuperAdminEmail(u.email),
+      is_suspended: Boolean(u.is_suspended)
+    }));
+
+    res.json({ users: safeUsers });
+  } catch (error) {
+    console.error('Admin users error:', error);
+    res.status(500).json({ error: 'Failed to fetch user list' });
+  }
+});
+
+app.patch('/api/admin/users/:id/suspend', requireSuperAdmin, (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const target = db.prepare('SELECT id, email, is_suspended FROM users WHERE id = ?').get(targetId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (isSuperAdminEmail(target.email)) {
+      return res.status(400).json({ error: 'Super Admin account cannot be suspended' });
+    }
+
+    const newSuspended = target.is_suspended ? 0 : 1;
+    db.prepare('UPDATE users SET is_suspended = ? WHERE id = ?').run(newSuspended, target.id);
+
+    // If suspended, disconnect all active sockets for this user
+    if (newSuspended && io && io.sockets && io.sockets.sockets) {
+      for (const [sid, sock] of io.sockets.sockets.entries()) {
+        const uId = socketToUserSession.get(sid);
+        if (uId === target.id) {
+          sock.emit('account-suspended', { reason: 'Your account has been suspended by the Super Admin.' });
+          sock.disconnect(true);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      userId: target.id,
+      is_suspended: Boolean(newSuspended),
+      message: newSuspended ? 'User suspended successfully' : 'User reinstated successfully'
+    });
+  } catch (error) {
+    console.error('Suspend user error:', error);
+    res.status(500).json({ error: 'Failed to update user suspension status' });
+  }
+});
+
+app.delete('/api/admin/users/:id', requireSuperAdmin, (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const target = db.prepare('SELECT id, email FROM users WHERE id = ?').get(targetId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (isSuperAdminEmail(target.email)) {
+      return res.status(400).json({ error: 'Super Admin account cannot be deleted' });
+    }
+
+    // Disconnect any active sockets for this user
+    if (io && io.sockets && io.sockets.sockets) {
+      for (const [sid, sock] of io.sockets.sockets.entries()) {
+        const uId = socketToUserSession.get(sid);
+        if (uId === target.id) {
+          sock.emit('account-deleted', { reason: 'Your account was removed by the Super Admin.' });
+          sock.disconnect(true);
+        }
+      }
+    }
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+app.get('/api/admin/rooms', requireSuperAdmin, (req, res) => {
+  try {
+    const rooms = db.prepare(`
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      FROM rooms
+      ORDER BY created_at ASC
+    `).all();
+
+    const enriched = rooms.map(room => {
+      const roomState = activeRooms.get(room.id);
+      return {
+        ...room,
+        isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
+        is_private: Boolean(room.is_private),
+        onlineCount: roomState ? roomState.participants.size : 0,
+        participants: roomState ? Array.from(roomState.participants.values()).map(p => ({
+          socketId: p.socketId,
+          userId: p.user?.id,
+          displayName: p.user?.display_name || p.user?.username || 'Scholar',
+          isGuest: Boolean(p.user?.isGuest)
+        })) : []
+      };
+    });
+
+    res.json({ rooms: enriched, totalRooms: enriched.length, maxRooms: 50 });
+  } catch (error) {
+    console.error('Admin rooms error:', error);
+    res.status(500).json({ error: 'Failed to load rooms' });
+  }
+});
+
+app.patch('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
+  try {
+    const roomId = req.params.id;
+    const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const { name, description, category, removePassword, newPassword } = req.body;
+
+    let updatedName = name ? name.trim() : room.name;
+    let updatedDesc = description !== undefined ? description.trim() : room.description;
+    let updatedCat = category ? category.trim() : room.category;
+    let updatedPrivate = room.is_private;
+    let updatedPasscode = room.passcode;
+
+    if (removePassword) {
+      updatedPrivate = 0;
+      updatedPasscode = null;
+    } else if (newPassword && newPassword.trim()) {
+      if (PREDEFINED_ROOM_IDS.has(roomId)) {
+        return res.status(400).json({ error: 'Predefined rooms must remain public.' });
+      }
+      updatedPrivate = 1;
+      updatedPasscode = bcrypt.hashSync(newPassword.trim(), 10);
+    }
+
+    db.prepare(`
+      UPDATE rooms
+      SET name = ?, description = ?, category = ?, is_private = ?, passcode = ?
+      WHERE id = ?
+    `).run(updatedName, updatedDesc, updatedCat, updatedPrivate, updatedPasscode, roomId);
+
+    const safeUpdated = db.prepare(`
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      FROM rooms WHERE id = ?
+    `).get(roomId);
+
+    syncRoomToMongo(safeUpdated);
+
+    io.emit('rooms-updated', {
+      action: 'updated',
+      room: { ...safeUpdated, is_private: Boolean(safeUpdated.is_private), isPredefined: PREDEFINED_ROOM_IDS.has(roomId) }
+    });
+
+    res.json({
+      success: true,
+      message: 'Room updated successfully',
+      room: { ...safeUpdated, is_private: Boolean(safeUpdated.is_private), isPredefined: PREDEFINED_ROOM_IDS.has(roomId) }
+    });
+  } catch (error) {
+    console.error('Admin update room error:', error);
+    res.status(500).json({ error: 'Failed to update room' });
+  }
+});
+
+app.delete('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
+  try {
+    const roomId = req.params.id;
+    if (PREDEFINED_ROOM_IDS.has(roomId)) {
+      return res.status(400).json({ error: 'Cannot delete predefined public study halls.' });
+    }
+
+    const room = db.prepare('SELECT id FROM rooms WHERE id = ?').get(roomId);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    // Kick all occupants from this room
+    const roomState = activeRooms.get(roomId);
+    if (roomState) {
+      for (const [sid] of roomState.participants.entries()) {
+        const sock = io.sockets.sockets.get(sid);
+        if (sock) {
+          sock.emit('kicked-by-admin', {
+            roomId,
+            reason: 'This study hall was closed and removed by the Super Admin.'
+          });
+          handleLeave(sock, roomId);
+        }
+      }
+      activeRooms.delete(roomId);
+    }
+
+    db.prepare('DELETE FROM rooms WHERE id = ?').run(roomId);
+
+    io.emit('rooms-updated', { action: 'deleted', roomId });
+
+    res.json({ success: true, message: 'Room deleted successfully' });
+  } catch (error) {
+    console.error('Admin delete room error:', error);
+    res.status(500).json({ error: 'Failed to delete room' });
+  }
+});
+
+app.post('/api/admin/rooms/:id/kick/:userId', requireSuperAdmin, (req, res) => {
+  try {
+    const { id: roomId, userId: targetUserId } = req.params;
+    const { reason } = req.body || {};
+
+    const roomState = activeRooms.get(roomId);
+    if (!roomState) {
+      return res.status(404).json({ error: 'Room is not currently active' });
+    }
+
+    let kicked = false;
+    for (const [sid, p] of roomState.participants.entries()) {
+      if (p.user?.id === targetUserId || sid === targetUserId) {
+        const sock = io.sockets.sockets.get(sid);
+        if (sock) {
+          sock.emit('kicked-by-admin', {
+            roomId,
+            reason: reason || 'You were removed from this room by the Super Admin.'
+          });
+          handleLeave(sock, roomId);
+          kicked = true;
+        }
+      }
+    }
+
+    if (!kicked) {
+      return res.status(404).json({ error: 'Participant not found in room' });
+    }
+
+    res.json({ success: true, message: 'Participant kicked from room' });
+  } catch (error) {
+    console.error('Admin kick error:', error);
+    res.status(500).json({ error: 'Failed to kick participant' });
+  }
+});
+
+app.get('/api/admin/blogs', requireSuperAdmin, (req, res) => {
+  try {
+    const blogs = db.prepare(`
+      SELECT b.*, u.username as author_username, u.display_name as author_name, u.email as author_email
+      FROM blogs b
+      JOIN users u ON b.author_id = u.id
+      ORDER BY b.created_at DESC
+    `).all();
+
+    res.json({ blogs });
+  } catch (error) {
+    console.error('Admin blogs error:', error);
+    res.status(500).json({ error: 'Failed to load blogs for moderation' });
   }
 });
 
@@ -1885,6 +2273,7 @@ io.on('connection', (socket) => {
         currentUser = {
           id: decoded.id,
           username: decoded.username,
+          email: decoded.email,
           display_name: decoded.displayName || decoded.display_name || decoded.username,
           avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
         };
@@ -1953,6 +2342,7 @@ io.on('connection', (socket) => {
           currentUser = {
             id: decoded.id,
             username: decoded.username,
+            email: decoded.email,
             display_name: decoded.displayName || decoded.display_name || decoded.username,
             avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
           };
@@ -1980,7 +2370,8 @@ io.on('connection', (socket) => {
     // Check if room is private / password protected
     try {
       const roomRecord = db.prepare('SELECT id, is_private, passcode FROM rooms WHERE id = ?').get(roomId);
-      if (roomRecord && Boolean(roomRecord.is_private)) {
+      const isSuperAdmin = isAuthenticatedUser && currentUser && isSuperAdminEmail(currentUser.email);
+      if (roomRecord && Boolean(roomRecord.is_private) && !isSuperAdmin) {
         if (!isAuthenticatedUser || currentUser.isGuest) {
           socket.emit('room-access-denied', {
             roomId,
@@ -2407,6 +2798,52 @@ io.on('connection', (socket) => {
 
     // Acknowledge back to sender socket
     socket.emit('direct-message-sent', dmRecord);
+  });
+
+  // Super Admin: Moderation - Kick participant from room
+  socket.on('admin-kick-participant', ({ roomId, targetUserId, targetSocketId, reason }) => {
+    const adminEmail = currentUser?.email || (currentUser?.id ? db.prepare('SELECT email FROM users WHERE id = ?').get(currentUser.id)?.email : null);
+    if (!isAuthenticatedUser || !adminEmail || !isSuperAdminEmail(adminEmail)) {
+      socket.emit('admin-action-denied', { error: 'Super Admin privileges required' });
+      return;
+    }
+    const roomState = activeRooms.get(roomId);
+    if (!roomState) return;
+
+    let targetSocket = null;
+    if (targetSocketId && io.sockets.sockets.has(targetSocketId)) {
+      targetSocket = io.sockets.sockets.get(targetSocketId);
+    } else if (targetUserId) {
+      for (const [sid, p] of roomState.participants.entries()) {
+        if (p.user?.id === targetUserId || sid === targetUserId) {
+          targetSocket = io.sockets.sockets.get(sid);
+          break;
+        }
+      }
+    }
+
+    if (targetSocket) {
+      targetSocket.emit('kicked-by-admin', {
+        roomId,
+        reason: reason || 'You have been removed from this room by the Super Admin.'
+      });
+      handleLeave(targetSocket, roomId);
+      socket.emit('admin-action-success', { message: 'Participant kicked successfully' });
+    }
+  });
+
+  // Super Admin: Moderation - Delete chat message in room
+  socket.on('admin-delete-chat', ({ roomId, messageId }) => {
+    const adminEmail = currentUser?.email || (currentUser?.id ? db.prepare('SELECT email FROM users WHERE id = ?').get(currentUser.id)?.email : null);
+    if (!isAuthenticatedUser || !adminEmail || !isSuperAdminEmail(adminEmail)) {
+      socket.emit('admin-action-denied', { error: 'Super Admin privileges required' });
+      return;
+    }
+    const roomState = activeRooms.get(roomId);
+    if (roomState && Array.isArray(roomState.messages)) {
+      roomState.messages = roomState.messages.filter(m => m.id !== messageId);
+      io.to(roomId).emit('message-deleted', { roomId, messageId });
+    }
   });
 
   // Explicit Leave Room

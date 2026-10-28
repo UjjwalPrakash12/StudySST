@@ -178,6 +178,15 @@ try {
 try {
   db.exec("ALTER TABLE users ADD COLUMN google_id TEXT;");
 } catch (e) {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN is_suspended INTEGER DEFAULT 0;");
+} catch (e) {}
+
+// Strict role sanitization: ONLY ujjwalprakash1812@gmail.com can be superadmin
+try {
+  db.prepare("UPDATE users SET role = 'superadmin' WHERE LOWER(TRIM(email)) = 'ujjwalprakash1812@gmail.com'").run();
+  db.prepare("UPDATE users SET role = 'user' WHERE LOWER(TRIM(email)) != 'ujjwalprakash1812@gmail.com' AND role IN ('admin', 'superadmin')").run();
+} catch (e) {}
 
 // Seed default 5 predefined public rooms if missing
 const PREDEFINED_ROOMS = [

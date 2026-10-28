@@ -302,4 +302,77 @@ export const api = {
     });
     return handleResponse(res);
   },
+
+  // ==========================================
+  // SUPER ADMIN API METHODS
+  // ==========================================
+  async getAdminOverview() {
+    const res = await fetch(`${BASE_URL}/admin/overview`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminUsers() {
+    const res = await fetch(`${BASE_URL}/admin/users`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async suspendUser(userId) {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}/suspend`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async deleteUser(userId) {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminRooms() {
+    const res = await fetch(`${BASE_URL}/admin/rooms`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async updateAdminRoom(roomId, updateData) {
+    const res = await fetch(`${BASE_URL}/admin/rooms/${roomId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updateData),
+    });
+    return handleResponse(res);
+  },
+
+  async deleteAdminRoom(roomId) {
+    const res = await fetch(`${BASE_URL}/admin/rooms/${roomId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async kickRoomParticipant(roomId, userId, reason) {
+    const res = await fetch(`${BASE_URL}/admin/rooms/${roomId}/kick/${userId}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminBlogs() {
+    const res = await fetch(`${BASE_URL}/admin/blogs`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
 };

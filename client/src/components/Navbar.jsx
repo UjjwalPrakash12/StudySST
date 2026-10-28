@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { usePresence } from '../context/PresenceContext';
-import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon, Radio } from 'lucide-react';
+import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon, Radio, ShieldCheck } from 'lucide-react';
 
 export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
   const { user, logout, isAuthenticated } = useAuth();
@@ -87,6 +87,20 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
             <BarChart3 className="w-4 h-4 text-[#75695A]" />
             <span>Stats & Streaks</span>
           </button>
+
+          {user && (user.isSuperAdmin || user.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
+            <button
+              onClick={() => setCurrentView('admin')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-none text-xs font-bold transition-all ${
+                currentView === 'admin'
+                  ? 'bg-[#D4A373] text-[#40382F] border border-[#40382F]/20'
+                  : 'bg-[#FAEDCD] text-[#D4A373] hover:bg-[#E9EDC9] border border-[#D4A373]/40'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-[#D4A373]" />
+              <span>Super Admin</span>
+            </button>
+          )}
         </nav>
 
         {/* Right Section: Theme Toggle, Badges & Auth */}
@@ -142,6 +156,16 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
 
               {/* User Avatar & Logout */}
               <div className="flex items-center space-x-2 pl-2 border-l border-[rgba(64,56,47,0.2)]">
+                {user && (user.isSuperAdmin || user.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
+                  <div 
+                    onClick={() => setCurrentView('admin')}
+                    className="cursor-pointer hidden lg:flex items-center space-x-1 px-2 py-0.5 bg-[#D4A373] text-[#40382F] text-[10px] font-black border border-[#40382F]/20"
+                    title="Super Admin • Verified System Owner"
+                  >
+                    <ShieldCheck className="w-3 h-3 text-[#40382F]" />
+                    <span>ADMIN</span>
+                  </div>
+                )}
                 <div 
                   onClick={() => setCurrentView('analytics')}
                   className="w-8 h-8 rounded-none bg-[#D4A373] text-[#FEFAE0] font-bold text-xs flex items-center justify-center cursor-pointer border border-[#40382F]/20"

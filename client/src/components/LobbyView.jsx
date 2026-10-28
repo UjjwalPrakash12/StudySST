@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { usePresence } from '../context/PresenceContext';
+import { useAuth } from '../context/AuthContext';
 
 const CATEGORY_MAP = {
   'All Rooms': null,
@@ -25,6 +26,7 @@ const CATEGORIES = [
 ];
 
 export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
+  const { user } = useAuth();
   const { totalActive, authenticatedCount, anonymousCount, roomCounts, socket } = usePresence();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -160,11 +162,22 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
     }
   };
 
-  const handleRoomClick = (room) => {
+  const handleRoomClick = async (room) => {
     if (room.is_private) {
       if (!isAuthenticated) {
         onOpenAuth?.();
         return;
+      }
+      const isSuperAdmin = user?.isSuperAdmin || (user?.email && user.email.toLowerCase() === 'ujjwalprakash1812@gmail.com');
+      if (isSuperAdmin) {
+        try {
+          const res = await api.verifyRoomPassword(room.id, '');
+          onJoinRoom({ ...room, roomToken: res.roomToken });
+          return;
+        } catch (e) {
+          onJoinRoom(room);
+          return;
+        }
       }
       setPasswordPromptRoom(room);
       setEnteredPassword('');
