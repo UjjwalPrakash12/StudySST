@@ -1416,16 +1416,21 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   }, [isAuthenticated, spotifyStatus.connected, spotifyStatus.isSharing, room.id]);
 
   const handleConnectSpotify = async () => {
+    if (!isAuthenticated) {
+      alert('Authentication Required:\nPlease sign in or register an account to connect your Spotify account.');
+      return;
+    }
     setIsSpotifyLoading(true);
     try {
       const res = await api.getSpotifyAuthUrl();
       if (res.configured === false) {
-        alert('Spotify Integration Notice:\nSpotify Client ID / Secret are not configured in server environment variables (SPOTIFY_CLIENT_ID). Set them in .env to connect your Spotify account.');
+        alert('Spotify Integration Setup Required:\nSpotify API credentials are not configured yet on the server.\n\nTo enable Spotify music sharing:\n1. Create a free Spotify App on https://developer.spotify.com/dashboard\n2. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to your environment (.env or Render dashboard)\n3. Set Redirect URI in Spotify Dashboard to:\n' + window.location.origin + '/api/spotify/callback');
         setIsSpotifyLoading(false);
         return;
       }
-      if (res.authUrl) {
-        window.location.href = res.authUrl;
+      const targetUrl = res.authUrl || res.url;
+      if (targetUrl) {
+        window.location.href = targetUrl;
       }
     } catch (err) {
       alert('Failed to connect Spotify: ' + (err.message || 'Unknown error'));

@@ -1502,7 +1502,7 @@ app.get('/api/spotify/auth-url', authenticateToken, (req, res) => {
     state
   }).toString()}`;
 
-  res.json({ configured: true, url: authUrl });
+  res.json({ configured: true, url: authUrl, authUrl });
 });
 
 app.get('/api/spotify/callback', async (req, res) => {

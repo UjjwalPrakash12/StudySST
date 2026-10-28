@@ -4,14 +4,14 @@
 > **Course / Program:** Advanced Software Development & System Design  
 > **Submission Deadline:** 27 October 2026, 11:59 PM IST  
 > **Official Form Submission:** [Google Form](https://forms.gle/sBy4sfqyiRG2Zpom9)  
-> **Project Walkthrough & Video Demonstration:** [Watch Video on Google Drive](https://drive.google.com/drive/my-drive?q=after:2026-10-28%20parent:0ADuUbJFh-pJUUk9PVA)  
+> **Project Walkthrough & Video Demonstration:** [Watch Video on Google Drive](https://drive.google.com/file/d/1FByKqnxugNhSuPZzjYLk8g13Xrhz0qP2/view?usp=sharing)  
 > **Live Application:** [https://study-sst.vercel.app/](https://study-sst.vercel.app/)  
 > **License:** [MIT License](LICENSE)
 
 ---
 
 > 🎥 **Website Walkthrough & Explanation Video:**  
-> **[Watch the full video demonstration explaining StudySST](https://drive.google.com/drive/my-drive?q=after:2026-10-28%20parent:0ADuUbJFh-pJUUk9PVA)**  
+> **[Watch the full video demonstration explaining StudySST](https://drive.google.com/file/d/1FByKqnxugNhSuPZzjYLk8g13Xrhz0qP2/view?usp=sharing)**  
 > *(Explains the live study rooms, WebRTC video architecture, hardware-level privacy, procedural ambient soundscapes, live hour leaderboard, 1-to-1 direct messaging, Spotify sharing, and knowledge blog platform)*
 
 ---
@@ -197,7 +197,7 @@ Live Application:
 https://study-sst.vercel.app/
 
 Project Walkthrough & Video Demonstration:
-https://drive.google.com/drive/my-drive?q=after:2026-10-28%20parent:0ADuUbJFh-pJUUk9PVA
+https://drive.google.com/file/d/1FByKqnxugNhSuPZzjYLk8g13Xrhz0qP2/view?usp=sharing
 
 Primary Features:
 1. Virtual Focus Study Halls with low-latency WebRTC peer video and hardware sensor release.
