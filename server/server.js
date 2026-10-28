@@ -15,27 +15,35 @@ const { connectMongoDB, getIsConnected, models } = require('./mongodb');
 // ==========================================
 // MongoDB Synchronization Helpers
 // ==========================================
+// ==========================================
+// MongoDB Cloud Database Synchronization & Bidirectional Hydration
+// ==========================================
 async function syncUserToMongo(user) {
-  if (!getIsConnected() || !user) return;
+  if (!getIsConnected() || !user || !models.User) return;
   try {
+    const fullUser = user.password_hash !== undefined ? user : db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+    if (!fullUser) return;
     await models.User.findOneAndUpdate(
-      { id: user.id },
+      { id: fullUser.id },
       {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        password_hash: user.password_hash || '',
-        display_name: user.display_name,
-        avatar_seed: user.avatar_seed || 'Felix',
-        daily_goal_minutes: user.daily_goal_minutes || 120,
-        total_focus_minutes: user.total_focus_minutes || 0,
-        total_live_seconds: user.total_live_seconds || 0,
-        is_live: Boolean(user.is_live),
-        current_room_id: user.current_room_id || null,
-        current_streak: user.current_streak || 0,
-        longest_streak: user.longest_streak || 0,
-        bio: user.bio || '',
-        role: user.role || 'user'
+        id: fullUser.id,
+        username: fullUser.username,
+        email: fullUser.email,
+        password_hash: fullUser.password_hash || '',
+        display_name: fullUser.display_name,
+        avatar_seed: fullUser.avatar_seed || 'Felix',
+        daily_goal_minutes: fullUser.daily_goal_minutes || 120,
+        total_focus_minutes: fullUser.total_focus_minutes || 0,
+        total_live_seconds: fullUser.total_live_seconds || 0,
+        is_live: Boolean(fullUser.is_live),
+        current_room_id: fullUser.current_room_id || null,
+        current_streak: fullUser.current_streak || 0,
+        longest_streak: fullUser.longest_streak || 0,
+        last_active_date: fullUser.last_active_date || null,
+        bio: fullUser.bio || '',
+        role: fullUser.role || 'user',
+        is_suspended: Boolean(fullUser.is_suspended),
+        google_id: fullUser.google_id || null
       },
       { upsert: true, new: true }
     );
@@ -45,7 +53,7 @@ async function syncUserToMongo(user) {
 }
 
 async function syncBlogToMongo(blogId) {
-  if (!getIsConnected() || !blogId) return;
+  if (!getIsConnected() || !blogId || !models.Blog) return;
   try {
     const blog = db.prepare(`
       SELECT b.*, u.username as author_username, u.display_name as author_name 
@@ -69,14 +77,21 @@ async function syncBlogToMongo(blogId) {
         title: blog.title,
         content: blog.content,
         author_id: blog.author_id,
-        author_name: blog.author_name,
-        author_username: blog.author_username,
-        category: blog.category,
-        image_url: blog.image_url,
-        likes_count: blog.likes_count,
-        comments_count: blog.comments_count,
+        author_name: blog.author_name || 'Scholar',
+        author_username: blog.author_username || 'scholar',
+        category: blog.category || 'General',
+        image_url: blog.image_url || null,
+        likes_count: blog.likes_count || likes.length,
+        comments_count: blog.comments_count || comments.length,
         likes: likes,
-        comments: comments
+        comments: comments.map(c => ({
+          id: c.id,
+          user_id: c.user_id,
+          author_name: c.author_name || 'Scholar',
+          author_username: c.author_username || 'scholar',
+          content: c.comment || c.content || '',
+          created_at: c.created_at ? new Date(c.created_at) : new Date()
+        }))
       },
       { upsert: true, new: true }
     );
@@ -86,21 +101,23 @@ async function syncBlogToMongo(blogId) {
 }
 
 async function syncRoomToMongo(room) {
-  if (!getIsConnected() || !room) return;
+  if (!getIsConnected() || !room || !models.Room) return;
   try {
+    const fullRoom = room.passcode !== undefined ? room : db.prepare('SELECT * FROM rooms WHERE id = ?').get(room.id);
+    if (!fullRoom) return;
     await models.Room.findOneAndUpdate(
-      { id: room.id },
+      { id: fullRoom.id },
       {
-        id: room.id,
-        name: room.name,
-        description: room.description || '',
-        category: room.category,
-        pomodoro_work_mins: room.pomodoro_work_mins,
-        pomodoro_break_mins: room.pomodoro_break_mins,
-        bg_theme: room.bg_theme || 'cosmic',
-        is_private: Boolean(room.is_private),
-        passcode: room.passcode || null,
-        created_by: room.created_by || null
+        id: fullRoom.id,
+        name: fullRoom.name,
+        description: fullRoom.description || '',
+        category: fullRoom.category,
+        pomodoro_work_mins: fullRoom.pomodoro_work_mins || 25,
+        pomodoro_break_mins: fullRoom.pomodoro_break_mins || 5,
+        bg_theme: fullRoom.bg_theme || 'cosmic',
+        is_private: Boolean(fullRoom.is_private),
+        passcode: fullRoom.passcode || null,
+        created_by: fullRoom.created_by || null
       },
       { upsert: true, new: true }
     );
@@ -110,7 +127,7 @@ async function syncRoomToMongo(room) {
 }
 
 async function syncMessageToMongo(msg, roomId) {
-  if (!getIsConnected() || !msg) return;
+  if (!getIsConnected() || !msg || !models.Message) return;
   try {
     await models.Message.create({
       id: msg.id,
@@ -125,25 +142,294 @@ async function syncMessageToMongo(msg, roomId) {
   }
 }
 
-async function initialMongoSync() {
+async function syncTaskToMongo(task) {
+  if (!getIsConnected() || !task || !models.Task) return;
+  try {
+    await models.Task.findOneAndUpdate(
+      { id: task.id },
+      {
+        id: task.id,
+        user_id: task.user_id,
+        room_id: task.room_id || null,
+        title: task.title,
+        completed: Boolean(task.completed),
+        created_at: task.created_at ? new Date(task.created_at) : new Date()
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.warn('[MongoDB] Sync Task warning:', err.message);
+  }
+}
+
+async function syncSessionToMongo(session) {
+  if (!getIsConnected() || !session || !models.StudySession) return;
+  try {
+    await models.StudySession.findOneAndUpdate(
+      { id: session.id },
+      {
+        id: session.id,
+        user_id: session.user_id,
+        room_id: session.room_id || null,
+        duration_minutes: session.duration_minutes || 0,
+        mode: session.mode || 'work',
+        subject: session.subject || 'General Study',
+        notes: session.notes || '',
+        completed_at: session.completed_at ? new Date(session.completed_at) : new Date()
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.warn('[MongoDB] Sync Session warning:', err.message);
+  }
+}
+
+async function syncDirectMessageToMongo(dm) {
+  if (!getIsConnected() || !dm || !models.DirectMessage) return;
+  try {
+    await models.DirectMessage.findOneAndUpdate(
+      { id: dm.id },
+      {
+        id: dm.id,
+        room_id: dm.room_id,
+        sender_id: dm.sender_id,
+        recipient_id: dm.recipient_id,
+        message: dm.message,
+        created_at: dm.created_at ? new Date(dm.created_at) : new Date()
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.warn('[MongoDB] Sync DirectMessage warning:', err.message);
+  }
+}
+
+async function syncLiveSessionToMongo(session) {
+  if (!getIsConnected() || !session || !models.LiveSession) return;
+  try {
+    await models.LiveSession.findOneAndUpdate(
+      { id: session.id },
+      {
+        id: session.id,
+        user_id: session.user_id,
+        room_id: session.room_id,
+        socket_id: session.socket_id || null,
+        started_at: session.started_at ? new Date(session.started_at) : new Date(),
+        ended_at: session.ended_at ? new Date(session.ended_at) : null,
+        duration_seconds: session.duration_seconds || 0,
+        last_heartbeat: session.last_heartbeat ? new Date(session.last_heartbeat) : new Date(),
+        is_active: Boolean(session.is_active)
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.warn('[MongoDB] Sync LiveSession warning:', err.message);
+  }
+}
+
+async function enforceSuperAdminRole() {
+  const superAdminEmail = 'ujjwalprakash1812@gmail.com';
+  try {
+    db.prepare("UPDATE users SET role = 'superadmin' WHERE LOWER(TRIM(email)) = ?").run(superAdminEmail);
+    db.prepare("UPDATE users SET role = 'user' WHERE LOWER(TRIM(email)) != ? AND role IN ('admin', 'superadmin')").run(superAdminEmail);
+
+    if (getIsConnected() && models.User) {
+      await models.User.updateMany(
+        { email: superAdminEmail },
+        { $set: { role: 'superadmin' } }
+      );
+      await models.User.updateMany(
+        { email: { $ne: superAdminEmail }, role: { $in: ['admin', 'superadmin'] } },
+        { $set: { role: 'user' } }
+      );
+    }
+  } catch (err) {
+    console.warn('Super Admin role enforcement warning:', err.message);
+  }
+}
+
+async function synchronizeCloudDatabase() {
   if (!getIsConnected()) return;
   try {
-    console.log('🔄 Performing initial sync of SQLite data to MongoDB Atlas...');
-    const users = db.prepare('SELECT * FROM users').all();
-    for (const u of users) {
-      await syncUserToMongo(u);
+    const mongoUserCount = await models.User.countDocuments();
+    const mongoRoomCount = await models.Room.countDocuments();
+    const mongoBlogCount = await models.Blog.countDocuments();
+
+    console.log(`📊 Cloud Database Status: ${mongoUserCount} users, ${mongoRoomCount} rooms, ${mongoBlogCount} blogs in MongoDB Atlas.`);
+
+    if (mongoUserCount > 0 || mongoRoomCount > 0 || mongoBlogCount > 0) {
+      // Cloud database has records -> Hydrate local SQLite so it matches MongoDB Atlas exactly
+      console.log('⚡ Hydrating runtime cache from MongoDB Atlas cloud database...');
+
+      // 1. Hydrate Users
+      const users = await models.User.find({}).lean();
+      for (const u of users) {
+        db.prepare(`
+          INSERT INTO users (
+            id, username, email, password_hash, display_name, avatar_seed,
+            daily_goal_minutes, total_focus_minutes, total_live_seconds,
+            is_live, current_room_id, current_streak, longest_streak,
+            last_active_date, bio, role, is_suspended, google_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            email = excluded.email,
+            password_hash = excluded.password_hash,
+            display_name = excluded.display_name,
+            avatar_seed = excluded.avatar_seed,
+            daily_goal_minutes = excluded.daily_goal_minutes,
+            total_focus_minutes = excluded.total_focus_minutes,
+            total_live_seconds = excluded.total_live_seconds,
+            is_live = excluded.is_live,
+            current_room_id = excluded.current_room_id,
+            current_streak = excluded.current_streak,
+            longest_streak = excluded.longest_streak,
+            last_active_date = excluded.last_active_date,
+            bio = excluded.bio,
+            role = excluded.role,
+            is_suspended = excluded.is_suspended,
+            google_id = excluded.google_id;
+        `).run(
+          u.id, u.username, u.email, u.password_hash || '', u.display_name, u.avatar_seed || 'Felix',
+          u.daily_goal_minutes || 120, u.total_focus_minutes || 0, u.total_live_seconds || 0,
+          u.is_live ? 1 : 0, u.current_room_id || null, u.current_streak || 0, u.longest_streak || 0,
+          u.last_active_date || null, u.bio || '', u.role || 'user', u.is_suspended ? 1 : 0, u.google_id || null
+        );
+      }
+
+      // 2. Hydrate Rooms
+      const rooms = await models.Room.find({}).lean();
+      for (const r of rooms) {
+        db.prepare(`
+          INSERT INTO rooms (
+            id, name, description, category, pomodoro_work_mins, pomodoro_break_mins,
+            bg_theme, is_private, passcode, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            category = excluded.category,
+            pomodoro_work_mins = excluded.pomodoro_work_mins,
+            pomodoro_break_mins = excluded.pomodoro_break_mins,
+            bg_theme = excluded.bg_theme,
+            is_private = excluded.is_private,
+            passcode = COALESCE(excluded.passcode, rooms.passcode),
+            created_by = excluded.created_by;
+        `).run(
+          r.id, r.name, r.description || '', r.category || 'Silent Study',
+          r.pomodoro_work_mins || 25, r.pomodoro_break_mins || 5,
+          r.bg_theme || 'cosmic', r.is_private ? 1 : 0, r.passcode || null, r.created_by || null
+        );
+      }
+
+      // 3. Hydrate Blogs, Likes, and Comments
+      const blogs = await models.Blog.find({}).lean();
+      for (const b of blogs) {
+        db.prepare(`
+          INSERT INTO blogs (
+            id, author_id, title, content, category, image_url, likes_count, comments_count, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published')
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            content = excluded.content,
+            category = excluded.category,
+            image_url = excluded.image_url,
+            likes_count = excluded.likes_count,
+            comments_count = excluded.comments_count;
+        `).run(
+          b.id, b.author_id, b.title, b.content, b.category || 'General',
+          b.image_url || null, b.likes_count || (b.likes ? b.likes.length : 0),
+          b.comments_count || (b.comments ? b.comments.length : 0)
+        );
+
+        if (Array.isArray(b.likes)) {
+          for (const uid of b.likes) {
+            try {
+              db.prepare(`
+                INSERT INTO blog_likes (id, blog_id, user_id)
+                VALUES (?, ?, ?)
+                ON CONFLICT(blog_id, user_id) DO NOTHING;
+              `).run(`like-${b.id}-${uid}`, b.id, uid);
+            } catch (e) {}
+          }
+        }
+
+        if (Array.isArray(b.comments)) {
+          for (const c of b.comments) {
+            try {
+              db.prepare(`
+                INSERT INTO blog_comments (id, blog_id, user_id, comment, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET comment = excluded.comment;
+              `).run(
+                c.id || `c-${crypto.randomUUID()}`,
+                b.id,
+                c.user_id,
+                c.content || c.comment || '',
+                c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString()
+              );
+            } catch (e) {}
+          }
+        }
+      }
+
+      // 4. Hydrate Tasks
+      if (models.Task) {
+        const tasks = await models.Task.find({}).lean();
+        for (const t of tasks) {
+          db.prepare(`
+            INSERT INTO tasks (id, user_id, room_id, title, completed)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET completed = excluded.completed, title = excluded.title;
+          `).run(t.id, t.user_id, t.room_id || null, t.title, t.completed ? 1 : 0);
+        }
+      }
+
+      // 5. Hydrate Direct Messages
+      if (models.DirectMessage) {
+        const dms = await models.DirectMessage.find({}).limit(500).lean();
+        for (const dm of dms) {
+          db.prepare(`
+            INSERT INTO direct_messages (id, room_id, sender_id, recipient_id, message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING;
+          `).run(
+            dm.id, dm.room_id, dm.sender_id, dm.recipient_id, dm.message,
+            dm.created_at ? new Date(dm.created_at).toISOString() : new Date().toISOString()
+          );
+        }
+      }
+
+      console.log(`✅ Cache hydrated successfully from MongoDB Atlas: ${users.length} users, ${rooms.length} rooms, ${blogs.length} blogs!`);
+    } else {
+      // MongoDB Atlas is brand new -> Migrate existing local SQLite database to MongoDB Atlas
+      console.log('🚀 Migrating existing local records to MongoDB Atlas cloud database...');
+      const localUsers = db.prepare('SELECT * FROM users').all();
+      for (const u of localUsers) {
+        await syncUserToMongo(u);
+      }
+      const localRooms = db.prepare('SELECT * FROM rooms').all();
+      for (const r of localRooms) {
+        await syncRoomToMongo(r);
+      }
+      const localBlogs = db.prepare('SELECT id FROM blogs').all();
+      for (const b of localBlogs) {
+        await syncBlogToMongo(b.id);
+      }
+      const localTasks = db.prepare('SELECT * FROM tasks').all();
+      for (const t of localTasks) {
+        await syncTaskToMongo(t);
+      }
+      const localDMs = db.prepare('SELECT * FROM direct_messages').all();
+      for (const dm of localDMs) {
+        await syncDirectMessageToMongo(dm);
+      }
+      console.log(`✅ Initial cloud migration complete: ${localUsers.length} users, ${localRooms.length} rooms, ${localBlogs.length} blogs migrated to MongoDB Atlas!`);
     }
-    const rooms = db.prepare('SELECT * FROM rooms').all();
-    for (const r of rooms) {
-      await syncRoomToMongo(r);
-    }
-    const blogs = db.prepare('SELECT id FROM blogs').all();
-    for (const b of blogs) {
-      await syncBlogToMongo(b.id);
-    }
-    console.log(`✅ Successfully synced ${users.length} users, ${rooms.length} rooms, and ${blogs.length} blogs to MongoDB Atlas!`);
+
+    await enforceSuperAdminRole();
   } catch (err) {
-    console.warn('Initial MongoDB sync warning:', err.message);
+    console.error('❌ Cloud database synchronization error:', err);
   }
 }
 
@@ -310,6 +596,12 @@ function finalizeLiveSession(userId, nowMs = Date.now()) {
         db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
       }
     }
+
+    // Sync finalized live session and updated user statistics to MongoDB Atlas
+    const fullFinalSession = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(session.sessionId);
+    const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(session.userId);
+    syncLiveSessionToMongo(fullFinalSession);
+    syncUserToMongo(updatedUser);
   } catch (err) {
     console.error('[Session] Error finalizing live session:', err.message);
   }
@@ -578,7 +870,7 @@ app.post('/api/auth/register', (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
 
@@ -587,7 +879,45 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     const cleanLogin = login.trim().toLowerCase();
-    const user = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(cleanLogin, cleanLogin);
+    let user = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(cleanLogin, cleanLogin);
+
+    // If not found in local cache, query authoritative MongoDB Atlas cloud database
+    if (!user && getIsConnected() && models.User) {
+      try {
+        const mongoUser = await models.User.findOne({
+          $or: [{ username: cleanLogin }, { email: cleanLogin }]
+        }).lean();
+        if (mongoUser) {
+          db.prepare(`
+            INSERT INTO users (
+              id, username, email, password_hash, display_name, avatar_seed,
+              daily_goal_minutes, total_focus_minutes, total_live_seconds,
+              is_live, current_room_id, current_streak, longest_streak,
+              last_active_date, bio, role, is_suspended, google_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              username = excluded.username,
+              email = excluded.email,
+              password_hash = excluded.password_hash,
+              display_name = excluded.display_name,
+              role = excluded.role,
+              is_suspended = excluded.is_suspended;
+          `).run(
+            mongoUser.id, mongoUser.username, mongoUser.email, mongoUser.password_hash || '',
+            mongoUser.display_name, mongoUser.avatar_seed || 'Felix',
+            mongoUser.daily_goal_minutes || 120, mongoUser.total_focus_minutes || 0,
+            mongoUser.total_live_seconds || 0, mongoUser.is_live ? 1 : 0,
+            mongoUser.current_room_id || null, mongoUser.current_streak || 0,
+            mongoUser.longest_streak || 0, mongoUser.last_active_date || null,
+            mongoUser.bio || '', mongoUser.role || 'user', mongoUser.is_suspended ? 1 : 0,
+            mongoUser.google_id || null
+          );
+          user = db.prepare('SELECT * FROM users WHERE id = ?').get(mongoUser.id);
+        }
+      } catch (err) {
+        console.warn('[MongoDB] Login fallback lookup warning:', err.message);
+      }
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -742,6 +1072,7 @@ app.put('/api/auth/profile', authenticateToken, (req, res) => {
     `).run(newDisplayName, newGoal, newBio, newAvatar, req.user.id);
 
     const updatedUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
+    syncUserToMongo(updatedUser);
     res.json({ user: updatedUser });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update profile' });
@@ -823,7 +1154,7 @@ app.get('/api/blogs', optionalAuthenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
+app.get('/api/blogs/:id', optionalAuthenticateToken, async (req, res) => {
   try {
     const currentUserId = req.user ? req.user.id : null;
     let likedSelect = '0 as user_has_liked';
@@ -834,7 +1165,7 @@ app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
     }
     queryParams.push(req.params.id);
 
-    const blog = db.prepare(`
+    let blog = db.prepare(`
       SELECT 
         b.*,
         u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.bio as author_bio, u.is_live as author_is_live,
@@ -843,6 +1174,29 @@ app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
       JOIN users u ON b.author_id = u.id
       WHERE b.id = ?
     `).get(...queryParams);
+
+    if (!blog && getIsConnected() && models.Blog) {
+      try {
+        const mongoBlog = await models.Blog.findOne({ id: req.params.id }).lean();
+        if (mongoBlog) {
+          db.prepare(`
+            INSERT INTO blogs (id, author_id, title, content, category, image_url, likes_count, comments_count, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published')
+            ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content;
+          `).run(mongoBlog.id, mongoBlog.author_id, mongoBlog.title, mongoBlog.content, mongoBlog.category || 'General', mongoBlog.image_url || null, mongoBlog.likes_count || 0, mongoBlog.comments_count || 0);
+
+          blog = db.prepare(`
+            SELECT 
+              b.*,
+              u.id as author_id, u.username as author_username, u.display_name as author_name, u.avatar_seed as author_avatar, u.bio as author_bio, u.is_live as author_is_live,
+              ${likedSelect}
+            FROM blogs b
+            JOIN users u ON b.author_id = u.id
+            WHERE b.id = ?
+          `).get(...queryParams);
+        }
+      } catch (e) {}
+    }
 
     if (!blog) {
       return res.status(404).json({ error: 'Blog not found' });
@@ -1100,9 +1454,10 @@ app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, re
     const comment = db.prepare('SELECT * FROM blog_comments WHERE id = ? AND blog_id = ?').get(req.params.commentId, req.params.blogId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
 
+    const blog = db.prepare('SELECT author_id FROM blogs WHERE id = ?').get(req.params.blogId);
     // Can delete if author of comment, owner of the blog, or superadmin
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
-    if (comment.user_id !== req.user.id && (blog && blog.author_id !== req.user.id) && !isSuperAdmin) {
+    if (comment.user_id !== req.user.id && (!blog || blog.author_id !== req.user.id) && !isSuperAdmin) {
       return res.status(403).json({ error: 'Unauthorized to delete this comment' });
     }
 
@@ -1273,12 +1628,40 @@ app.get('/api/rooms', (req, res) => {
   }
 });
 
-app.get('/api/rooms/:id', (req, res) => {
+app.get('/api/rooms/:id', async (req, res) => {
   try {
-    const room = db.prepare(`
+    let room = db.prepare(`
       SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
       FROM rooms WHERE id = ?
     `).get(req.params.id);
+
+    if (!room && getIsConnected() && models.Room) {
+      try {
+        const mongoRoom = await models.Room.findOne({ id: req.params.id }).lean();
+        if (mongoRoom) {
+          db.prepare(`
+            INSERT INTO rooms (
+              id, name, description, category, pomodoro_work_mins, pomodoro_break_mins,
+              bg_theme, is_private, passcode, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              description = excluded.description,
+              category = excluded.category,
+              is_private = excluded.is_private,
+              passcode = COALESCE(excluded.passcode, rooms.passcode);
+          `).run(
+            mongoRoom.id, mongoRoom.name, mongoRoom.description || '', mongoRoom.category || 'Silent Study',
+            mongoRoom.pomodoro_work_mins || 25, mongoRoom.pomodoro_break_mins || 5,
+            mongoRoom.bg_theme || 'cosmic', mongoRoom.is_private ? 1 : 0, mongoRoom.passcode || null, mongoRoom.created_by || null
+          );
+          room = db.prepare(`
+            SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+            FROM rooms WHERE id = ?
+          `).get(req.params.id);
+        }
+      } catch (e) {}
+    }
 
     if (!room) {
       return res.status(404).json({ error: 'Room not found' });
@@ -1568,6 +1951,9 @@ app.delete('/api/admin/users/:id', requireSuperAdmin, (req, res) => {
     }
 
     db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+    if (getIsConnected() && models.User) {
+      models.User.deleteOne({ id: target.id }).catch(() => {});
+    }
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     console.error('Delete user error:', error);
@@ -1691,6 +2077,9 @@ app.delete('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
     }
 
     db.prepare('DELETE FROM rooms WHERE id = ?').run(roomId);
+    if (getIsConnected() && models.Room) {
+      models.Room.deleteOne({ id: roomId }).catch(() => {});
+    }
 
     io.emit('rooms-updated', { action: 'deleted', roomId });
 
@@ -1918,6 +2307,11 @@ app.post('/api/sessions/record', authenticateToken, (req, res) => {
       WHERE id = ?
     `).run(mins, req.user.id);
 
+    const sessionRec = db.prepare('SELECT * FROM study_sessions WHERE id = ?').get(sessionId);
+    const userRec = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    syncSessionToMongo(sessionRec);
+    syncUserToMongo(userRec);
+
     res.status(201).json({ success: true, sessionId });
   } catch (err) {
     console.error('Record session error:', err);
@@ -1959,6 +2353,7 @@ app.post('/api/tasks', authenticateToken, (req, res) => {
     `).run(taskId, req.user.id, roomId || null, title.trim());
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+    syncTaskToMongo(task);
     res.status(201).json({ task });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create task' });
@@ -1974,8 +2369,10 @@ app.patch('/api/tasks/:id/toggle', authenticateToken, (req, res) => {
 
     const newCompleted = task.completed === 1 ? 0 : 1;
     db.prepare('UPDATE tasks SET completed = ? WHERE id = ?').run(newCompleted, task.id);
+    const updatedTask = { ...task, completed: newCompleted };
+    syncTaskToMongo(updatedTask);
 
-    res.json({ task: { ...task, completed: newCompleted } });
+    res.json({ task: updatedTask });
   } catch (error) {
     res.status(500).json({ error: 'Failed to toggle task' });
   }
@@ -1984,6 +2381,9 @@ app.patch('/api/tasks/:id/toggle', authenticateToken, (req, res) => {
 app.delete('/api/tasks/:id', authenticateToken, (req, res) => {
   try {
     db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
+    if (getIsConnected() && models.Task) {
+      models.Task.deleteOne({ id: req.params.id }).catch(() => {});
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete task' });
@@ -2334,10 +2734,11 @@ io.on('connection', (socket) => {
       handleLeave(socket, currentRoomId);
     }
 
-    // Check if token was provided in user payload if not yet verified
-    if (!isAuthenticatedUser && user && user.token) {
+    // Check if token was provided in auth, payload, or user object
+    const candidateAuthToken = socket.handshake?.auth?.token || (user && (user.token || user.authToken));
+    if (!isAuthenticatedUser && candidateAuthToken) {
       try {
-        const decoded = jwt.verify(user.token, JWT_SECRET);
+        const decoded = jwt.verify(candidateAuthToken, JWT_SECRET);
         if (decoded && decoded.id) {
           currentUser = {
             id: decoded.id,
@@ -2350,6 +2751,16 @@ io.on('connection', (socket) => {
           socket.isAuthenticatedUser = true;
         }
       } catch (e) {}
+    }
+
+    // Also support registered user object by ID lookup
+    if (!isAuthenticatedUser && user && user.id && !user.id.startsWith('guest-')) {
+      const dbUser = db.prepare('SELECT id, username, email, display_name, avatar_seed FROM users WHERE id = ?').get(user.id);
+      if (dbUser) {
+        currentUser = dbUser;
+        isAuthenticatedUser = true;
+        socket.isAuthenticatedUser = true;
+      }
     }
 
     if (isAuthenticatedUser && currentUser) {
@@ -2767,6 +3178,7 @@ io.on('connection', (socket) => {
           INSERT INTO direct_messages (id, room_id, sender_id, recipient_id, message)
           VALUES (?, ?, ?, ?, ?)
         `).run(dmId, roomId, currentUser.id, recipientId, rawText);
+        syncDirectMessageToMongo({ id: dmId, room_id: roomId, sender_id: currentUser.id, recipient_id: recipientId, message: rawText, created_at: isoDate });
       } catch (err) {
         console.warn('[DM] Warning saving direct message:', err.message);
       }
@@ -2921,9 +3333,9 @@ app.get('/api/mongodb/status', (req, res) => {
   const connected = getIsConnected();
   res.json({
     status: connected ? 'connected' : 'running_fallback',
-    engine: connected ? 'MongoDB Atlas (Mongoose)' : 'Local High-Performance SQLite (Fallback)',
+    engine: connected ? 'MongoDB Atlas (Mongoose Cloud Database)' : 'Local High-Performance SQLite (Fallback)',
     configured: Boolean(process.env.MONGODB_URI),
-    models: connected ? ['User', 'Blog', 'Room', 'StudySession', 'Message'] : []
+    models: connected ? ['User', 'Blog', 'Room', 'StudySession', 'Message', 'Task', 'DirectMessage', 'LiveSession'] : []
   });
 });
 
@@ -2940,15 +3352,34 @@ if (fs.existsSync(clientDistPath)) {
 }
 
 const PORT = process.env.PORT || 5050;
-server.listen(PORT, async () => {
-  console.log(`=================================================`);
-  console.log(`  StudyStream Live Server Running on port ${PORT}`);
-  console.log(`  Community Blogs & Unlimited Live Hours: ACTIVE `);
-  console.log(`=================================================`);
-  
-  // Connect to MongoDB Atlas if MONGODB_URI is provided
-  const mongoConnected = await connectMongoDB();
-  if (mongoConnected) {
-    await initialMongoSync();
-  }
-});
+
+const shouldListen = !process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME && !process.env.IS_API_HANDLER && !process.env.NO_SERVER_LISTEN;
+
+if (shouldListen) {
+  server.listen(PORT, async () => {
+    console.log(`=================================================`);
+    console.log(`  StudyStream Live Server Running on port ${PORT}`);
+    console.log(`  Community Blogs & Unlimited Live Hours: ACTIVE `);
+    console.log(`=================================================`);
+    
+    // Connect to MongoDB Atlas if MONGODB_URI is provided
+    const mongoConnected = await connectMongoDB();
+    if (mongoConnected) {
+      await synchronizeCloudDatabase();
+    }
+  });
+} else {
+  // Serverless / Vercel execution environment
+  connectMongoDB().then(connected => {
+    if (connected) {
+      synchronizeCloudDatabase().catch(e => console.warn('Cloud sync error in serverless:', e));
+    }
+  }).catch(err => {
+    console.warn('Serverless MongoDB connect error:', err);
+  });
+}
+
+module.exports = app;
+module.exports.app = app;
+module.exports.server = server;
+

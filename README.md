@@ -158,15 +158,43 @@ It combines:
 
 ---
 
-## 7. Environment Variables
+## 7. Cloud Database Persistence & Deployment Configuration
 
-Create `server/.env` (optional, sane production defaults provided):
+StudySST features a hybrid persistent architecture designed to permanently eliminate data loss during GitHub pushes, Vercel rebuilds, and container restarts.
+
+### 🌐 Architecture & Persistence Flow
+1. **Authoritative Cloud Database (MongoDB Atlas)**: All users, custom study rooms, community blogs, likes, comments, study sessions, and direct messages permanently persist in MongoDB Atlas.
+2. **Bidirectional Startup Hydration**: On server boot or serverless cold-start, the runtime automatically connects to MongoDB Atlas and hydrates local runtime state. If MongoDB is new, it seamlessly migrates existing local records.
+3. **Dual-Write Pipeline**: All write mutations (registering, posting blogs, toggling likes, creating rooms, recording study hours) write to MongoDB Atlas and local cache.
+4. **Vercel Serverless & Render Native Support**: `/api` routes are routed via `api/index.js` for Vercel serverless execution, and full WebSockets / WebRTC signaling run on persistent Node hosts (e.g., Render, Railway, Fly.io).
+
+### 🔑 Environment Variables Setup
+
+#### 1. Backend Server (Render / Railway / VPS / `server/.env`)
+Set these environment variables in your Render / Railway dashboard or `server/.env`:
 
 ```env
 PORT=5050
 NODE_ENV=production
-JWT_SECRET=your_custom_jwt_secret_key_here
+JWT_SECRET=your_super_secret_jwt_key_here
 CORS_ORIGIN=*
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/studystream?retryWrites=true&w=majority
+```
+
+> **How to get a free MongoDB Atlas URI:**
+> 1. Sign up at [mongodb.com/atlas](https://www.mongodb.com/atlas) (100% Free Forever tier).
+> 2. Create a cluster (e.g. `Cluster0`).
+> 3. Under **Database Access**, create a user (e.g. `studysst_user` with password).
+> 4. Under **Network Access**, click **Add IP Address** -> select **Allow Access from Anywhere (`0.0.0.0/0`)**.
+> 5. Click **Connect** -> **Drivers** (Node.js) -> copy the URI string and paste into `MONGODB_URI`.
+
+#### 2. Frontend (Vercel Dashboard at `https://study-sst.vercel.app/`)
+In the **Vercel Project Settings -> Environment Variables**, add:
+
+```env
+VITE_API_URL=https://your-backend.onrender.com
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/studystream?retryWrites=true&w=majority
+JWT_SECRET=your_super_secret_jwt_key_here
 ```
 
 ---

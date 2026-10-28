@@ -16,7 +16,9 @@ const userSchema = new mongoose.Schema({
   longest_streak: { type: Number, default: 0 },
   last_active_date: { type: String, default: null },
   bio: { type: String, default: 'Ready to focus and achieve big goals!' },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' }
+  role: { type: String, enum: ['user', 'admin', 'superadmin'], default: 'user' },
+  is_suspended: { type: Boolean, default: false },
+  google_id: { type: String, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

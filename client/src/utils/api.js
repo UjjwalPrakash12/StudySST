@@ -16,6 +16,10 @@ function getAuthHeaders() {
 }
 
 async function handleResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    throw new Error('API server returned HTML instead of JSON. Ensure the backend server is running and VITE_API_URL is configured in your environment.');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.error || `Request failed with status ${res.status}`);

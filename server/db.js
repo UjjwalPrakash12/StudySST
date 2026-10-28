@@ -3,16 +3,46 @@ const path = require('node:path');
 const fs = require('node:fs');
 const bcrypt = require('bcryptjs');
 
-const dbPath = path.join(__dirname, 'studystream.db');
-const db = new DatabaseSync(dbPath);
+let dbPath = path.join(__dirname, 'studystream.db');
+let uploadsDir = path.join(__dirname, 'uploads', 'blogs');
+
+// Check if running on Vercel, AWS Lambda, or read-only filesystem
+const isReadOnly = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+if (isReadOnly) {
+  dbPath = path.join('/tmp', 'studystream.db');
+  uploadsDir = path.join('/tmp', 'uploads', 'blogs');
+  const templateDb = path.join(__dirname, 'studystream.db');
+  if (fs.existsSync(templateDb) && !fs.existsSync(dbPath)) {
+    try { fs.copyFileSync(templateDb, dbPath); } catch (e) {}
+  }
+} else {
+  try {
+    fs.accessSync(__dirname, fs.constants.W_OK);
+  } catch (e) {
+    dbPath = path.join('/tmp', 'studystream.db');
+    uploadsDir = path.join('/tmp', 'uploads', 'blogs');
+  }
+}
+
+let db;
+try {
+  db = new DatabaseSync(dbPath);
+} catch (err) {
+  dbPath = path.join('/tmp', 'studystream.db');
+  uploadsDir = path.join('/tmp', 'uploads', 'blogs');
+  db = new DatabaseSync(dbPath);
+}
 
 // Enable WAL mode for high performance concurrent writes
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+try {
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+} catch (e) {}
 
 // Create uploads directory for blog images
-const uploadsDir = path.join(__dirname, 'uploads', 'blogs');
-fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+} catch (e) {}
 
 // Initialize base tables
 db.exec(`
