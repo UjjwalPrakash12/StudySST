@@ -193,7 +193,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/blogs/${blogId}/comments`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, comment: content }),
     });
     return handleResponse(res);
   },

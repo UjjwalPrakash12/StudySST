@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api, getFullImageUrl } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { usePresence } from '../context/PresenceContext';
 
 export default function BlogDetailModal({ 
   blogId, 
@@ -15,6 +16,7 @@ export default function BlogDetailModal({
   onOpenAuth 
 }) {
   const { user, isAuthenticated } = useAuth();
+  const { socket } = usePresence();
   const [blog, setBlog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState('');
@@ -25,6 +27,7 @@ export default function BlogDetailModal({
   const loadBlogDetails = async () => {
     if (!blogId) return;
     setLoading(true);
+    setError('');
     try {
       const res = await api.getBlog(blogId);
       setBlog(res.blog);
@@ -42,8 +45,68 @@ export default function BlogDetailModal({
     } else {
       setBlog(null);
       setCommentText('');
+      setError('');
     }
   }, [isOpen, blogId]);
+
+  // Real-time synchronization for likes and comments
+  useEffect(() => {
+    if (!socket || !isOpen || !blogId) return;
+
+    const handleLikeUpdated = (data) => {
+      if (data.blogId === blogId) {
+        const finalCount = data.likes_count !== undefined ? data.likes_count : data.likesCount;
+        setBlog(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            likes_count: finalCount,
+            ...(user && user.id === data.userId ? { user_has_liked: data.liked } : {})
+          };
+        });
+      }
+    };
+
+    const handleCommentAdded = (data) => {
+      if (data.blogId === blogId && data.comment) {
+        setBlog(prev => {
+          if (!prev) return prev;
+          const alreadyExists = (prev.comments || []).some(c => c.id === data.comment.id);
+          if (alreadyExists) return prev;
+          const count = data.comments_count !== undefined ? data.comments_count : data.commentsCount;
+          return {
+            ...prev,
+            comments_count: count,
+            comments: [data.comment, ...(prev.comments || [])]
+          };
+        });
+      }
+    };
+
+    const handleCommentDeleted = (data) => {
+      if (data.blogId === blogId) {
+        const count = data.comments_count !== undefined ? data.comments_count : data.commentsCount;
+        setBlog(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            comments_count: count,
+            comments: (prev.comments || []).filter(c => c.id !== data.commentId)
+          };
+        });
+      }
+    };
+
+    socket.on('blog-like-updated', handleLikeUpdated);
+    socket.on('blog-comment-added', handleCommentAdded);
+    socket.on('blog-comment-deleted', handleCommentDeleted);
+
+    return () => {
+      socket.off('blog-like-updated', handleLikeUpdated);
+      socket.off('blog-comment-added', handleCommentAdded);
+      socket.off('blog-comment-deleted', handleCommentDeleted);
+    };
+  }, [socket, isOpen, blogId, user]);
 
   if (!isOpen) return null;
 
@@ -52,11 +115,13 @@ export default function BlogDetailModal({
       if (onOpenAuth) onOpenAuth();
       return;
     }
+    if (!blog) return;
     try {
       const res = await api.toggleBlogLike(blog.id);
+      const newCount = res.likes_count !== undefined ? res.likes_count : res.likesCount;
       setBlog(prev => ({
         ...prev,
-        likes_count: res.likes_count,
+        likes_count: newCount,
         user_has_liked: res.liked
       }));
     } catch (err) {
@@ -70,19 +135,33 @@ export default function BlogDetailModal({
       if (onOpenAuth) onOpenAuth();
       return;
     }
-    if (!commentText.trim()) return;
+    const trimmed = commentText.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 2000) {
+      setError('Comment cannot exceed 2000 characters');
+      return;
+    }
 
     setSubmittingComment(true);
+    setError('');
     try {
-      const res = await api.addBlogComment(blog.id, commentText.trim());
-      setBlog(prev => ({
-        ...prev,
-        comments_count: (prev.comments_count || 0) + 1,
-        comments: [res.comment, ...(prev.comments || [])]
-      }));
+      const res = await api.addBlogComment(blog.id, trimmed);
+      const newComment = res.comment;
+      const count = res.comments_count !== undefined ? res.comments_count : res.commentsCount;
+
+      setBlog(prev => {
+        if (!prev) return prev;
+        const exists = (prev.comments || []).some(c => c.id === newComment.id);
+        return {
+          ...prev,
+          comments_count: count !== undefined ? count : (prev.comments_count || 0) + 1,
+          comments: exists ? prev.comments : [newComment, ...(prev.comments || [])]
+        };
+      });
       setCommentText('');
     } catch (err) {
       console.error('Failed to post comment:', err);
+      setError(err.message || 'Failed to submit comment. Please check your connection.');
     } finally {
       setSubmittingComment(false);
     }
@@ -91,10 +170,11 @@ export default function BlogDetailModal({
   const handleDeleteComment = async (commentId) => {
     if (!window.confirm('Delete this comment?')) return;
     try {
-      await api.deleteBlogComment(blog.id, commentId);
+      const res = await api.deleteBlogComment(blog.id, commentId);
+      const count = res.comments_count !== undefined ? res.comments_count : res.commentsCount;
       setBlog(prev => ({
         ...prev,
-        comments_count: Math.max(0, (prev.comments_count || 1) - 1),
+        comments_count: count !== undefined ? count : Math.max(0, (prev.comments_count || 1) - 1),
         comments: (prev.comments || []).filter(c => c.id !== commentId)
       }));
     } catch (err) {

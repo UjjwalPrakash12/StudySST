@@ -241,6 +241,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const spacebarPressedRef = useRef(false);
   const wasMutedBeforePttRef = useRef(false);
   const isSpeakingLocalRef = useRef(false);
+  const sessionStartedAtRef = useRef(null);
 
   useEffect(() => {
     micActiveRef.current = micActive;
@@ -649,10 +650,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       statusText
     });
 
-    socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages }) => {
+    socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages, sessionStartedAt, elapsedSeconds }) => {
       setParticipants(existingParticipants || []);
       if (initialMessages) {
         setMessages(initialMessages);
+      }
+      if (sessionStartedAt) {
+        sessionStartedAtRef.current = sessionStartedAt;
+        setLiveElapsedSeconds(elapsedSeconds || Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000)));
       }
       socket.emit('session-live-started', { roomId: room.id });
 
@@ -790,13 +795,21 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       }, 2500);
     });
 
+    socket.on('session-live-started', ({ sessionId, startedAt, elapsedSeconds }) => {
+      if (startedAt) {
+        sessionStartedAtRef.current = startedAt;
+        setLiveElapsedSeconds(elapsedSeconds || Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      }
+    });
+
     socket.on('heartbeat-ack', ({ verifiedLiveSeconds }) => {
       setServerVerifiedSeconds(verifiedLiveSeconds || 0);
     });
 
     const ticker = setInterval(() => {
-      setLiveElapsedSeconds(prev => {
-        const next = prev + 1;
+      if (sessionStartedAtRef.current) {
+        const next = Math.max(0, Math.floor((Date.now() - sessionStartedAtRef.current) / 1000));
+        setLiveElapsedSeconds(next);
         if (next > 0 && next % 1800 === 0) {
           soundSynthesizer.playChime();
           confetti({
@@ -805,15 +818,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
             origin: { y: 0.6 }
           });
         }
-        return next;
-      });
+      } else {
+        setLiveElapsedSeconds(prev => {
+          const next = prev + 1;
+          if (next > 0 && next % 1800 === 0) {
+            soundSynthesizer.playChime();
+            confetti({
+              particleCount: 70,
+              spread: 60,
+              origin: { y: 0.6 }
+            });
+          }
+          return next;
+        });
+      }
     }, 1000);
 
     const heartbeatTimer = setInterval(() => {
       if (socket.connected) {
         socket.emit('session-heartbeat', { roomId: room.id });
       }
-    }, 25000);
+    }, 20000);
 
     return () => {
       clearInterval(ticker);
@@ -1209,13 +1234,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   };
 
   const formatLiveElapsed = (seconds) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) {
-      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    const s = Math.max(0, seconds || 0);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
   const isAmbientActive = ambientVolumes.rain > 0 || ambientVolumes.cafe > 0 || ambientVolumes.binaural > 0 || ambientVolumes.fire > 0;

@@ -27,6 +27,7 @@ export function PresenceProvider({ children }) {
     timestamp: Date.now()
   });
 
+  const [socket, setSocket] = useState(null);
   const [currentView, setCurrentView] = useState('lobby');
   const [currentRoomId, setCurrentRoomId] = useState(null);
   const socketRef = useRef(null);
@@ -50,17 +51,18 @@ export function PresenceProvider({ children }) {
   // 2. Real-time global socket connection for presence tracking
   useEffect(() => {
     const socketEndpoint = import.meta.env.VITE_API_URL || window.location.origin;
-    const socket = io(socketEndpoint, {
+    const s = io(socketEndpoint, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
-    socketRef.current = socket;
+    socketRef.current = s;
+    setSocket(s);
 
-    socket.on('connect', () => {
+    s.on('connect', () => {
       // Register this visitor connection
-      socket.emit('presence-register', {
+      s.emit('presence-register', {
         visitorId: visitorIdRef.current,
         user: user ? { id: user.id, display_name: user.display_name, username: user.username } : null,
         isAuthenticated: Boolean(user),
@@ -69,14 +71,14 @@ export function PresenceProvider({ children }) {
       });
     });
 
-    socket.on('presence-stats', (stats) => {
+    s.on('presence-stats', (stats) => {
       if (stats && typeof stats.totalActive === 'number') {
         setPresenceStats(stats);
       }
     });
 
     return () => {
-      socket.disconnect();
+      s.disconnect();
     };
   }, []);
 
@@ -104,7 +106,8 @@ export function PresenceProvider({ children }) {
     roomCounts: presenceStats.roomCounts || {},
     updatePresenceView,
     visitorId: visitorIdRef.current,
-    presenceSocket: socketRef.current
+    socket,
+    presenceSocket: socket || socketRef.current
   };
 
   return (

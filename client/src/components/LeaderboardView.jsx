@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Trophy, Flame, Clock, Award, Medal, Crown, Radio, Sparkles, Filter, ShieldCheck, User } from 'lucide-react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { usePresence } from '../context/PresenceContext';
 
 function formatLiveHours(seconds) {
   const s = seconds || 0;
@@ -15,13 +16,14 @@ function formatLiveHours(seconds) {
 
 export default function LeaderboardView() {
   const { user: currentUser } = useAuth();
+  const { socket } = usePresence();
   const [period, setPeriod] = useState('all_time'); // 'all_time' | 'weekly' | 'monthly'
   const [leaderboard, setLeaderboard] = useState([]);
   const [currentUserRank, setCurrentUserRank] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchLeaderboard = async (selectedPeriod) => {
-    setLoading(true);
+  const fetchLeaderboard = async (selectedPeriod, isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const res = await api.getLeaderboard(selectedPeriod);
       setLeaderboard(res.leaderboard || []);
@@ -29,13 +31,27 @@ export default function LeaderboardView() {
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLeaderboard(period);
+    fetchLeaderboard(period, false);
   }, [period]);
+
+  // Real-time live synchronization across all users and browsers without manual refresh
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleLeaderboardUpdate = () => {
+      fetchLeaderboard(period, true);
+    };
+
+    socket.on('leaderboard-updated', handleLeaderboardUpdate);
+    return () => {
+      socket.off('leaderboard-updated', handleLeaderboardUpdate);
+    };
+  }, [socket, period]);
 
   const top3 = leaderboard.slice(0, 3);
 

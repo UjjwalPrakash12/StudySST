@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api, getFullImageUrl } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { usePresence } from '../context/PresenceContext';
 import BlogEditorModal from './BlogEditorModal';
 import BlogDetailModal from './BlogDetailModal';
 
@@ -20,6 +21,7 @@ const CATEGORIES = [
 
 export default function BlogCommunityView({ onOpenAuth }) {
   const { user, isAuthenticated } = useAuth();
+  const { socket } = usePresence();
   
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +65,55 @@ export default function BlogCommunityView({ onOpenAuth }) {
     fetchBlogs(1);
   }, [selectedCategory, sortBy]);
 
+  // Real-time synchronization of likes and comments across all users
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleLikeUpdated = ({ blogId, likesCount, likes_count, userId, liked }) => {
+      const finalCount = likes_count !== undefined ? likes_count : likesCount;
+      setBlogs(prev => prev.map(b => {
+        if (b.id === blogId) {
+          return {
+            ...b,
+            likes_count: finalCount,
+            ...(user && user.id === userId ? { user_has_liked: liked } : {})
+          };
+        }
+        return b;
+      }));
+    };
+
+    const handleCommentAdded = ({ blogId, commentsCount, comments_count }) => {
+      const count = comments_count !== undefined ? comments_count : commentsCount;
+      setBlogs(prev => prev.map(b => {
+        if (b.id === blogId) {
+          return { ...b, comments_count: count };
+        }
+        return b;
+      }));
+    };
+
+    const handleCommentDeleted = ({ blogId, commentsCount, comments_count }) => {
+      const count = comments_count !== undefined ? comments_count : commentsCount;
+      setBlogs(prev => prev.map(b => {
+        if (b.id === blogId) {
+          return { ...b, comments_count: count };
+        }
+        return b;
+      }));
+    };
+
+    socket.on('blog-like-updated', handleLikeUpdated);
+    socket.on('blog-comment-added', handleCommentAdded);
+    socket.on('blog-comment-deleted', handleCommentDeleted);
+
+    return () => {
+      socket.off('blog-like-updated', handleLikeUpdated);
+      socket.off('blog-comment-added', handleCommentAdded);
+      socket.off('blog-comment-deleted', handleCommentDeleted);
+    };
+  }, [socket, user]);
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     fetchBlogs(1);
@@ -104,11 +155,12 @@ export default function BlogCommunityView({ onOpenAuth }) {
     }
     try {
       const res = await api.toggleBlogLike(blogId);
+      const newCount = res.likes_count !== undefined ? res.likes_count : res.likesCount;
       setBlogs(prev => prev.map(b => {
         if (b.id === blogId) {
           return {
             ...b,
-            likes_count: res.likes_count,
+            likes_count: newCount,
             user_has_liked: res.liked
           };
         }

@@ -201,10 +201,135 @@ const upload = multer({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ==========================================
+// Atomic Transaction Helper
+// ==========================================
+function runInTransaction(fn) {
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    const result = fn();
+    db.exec('COMMIT;');
+    return result;
+  } catch (err) {
+    try { db.exec('ROLLBACK;'); } catch (e) {}
+    throw err;
+  }
+}
+
+// ==========================================
 // Live Session & Presence State (In-Memory)
 // ==========================================
 const activeRooms = new Map();
-const activeLiveSessions = new Map(); // socketId -> { sessionId, userId, roomId, startedAt, lastHeartbeat }
+
+// Map<userId, { sessionId, userId, roomId, startedAtMs, lastHeartbeatMs, lastCreditedAtMs, sockets: Set<string> }>
+const userActiveSessions = new Map();
+// Map<socketId, userId>
+const socketToUserSession = new Map();
+
+// Leaderboard live broadcast debouncer
+let lastLeaderboardBroadcast = 0;
+function broadcastLeaderboardUpdate(force = false) {
+  const now = Date.now();
+  if (force || now - lastLeaderboardBroadcast > 2500) {
+    lastLeaderboardBroadcast = now;
+    if (typeof io !== 'undefined' && io) {
+      io.emit('leaderboard-updated', { timestamp: now });
+    }
+  }
+}
+
+/**
+ * Accurately credit verified live study time using authoritative server timestamps.
+ * Multi-tab safe: Credits time once per user session, regardless of which tab sends heartbeat.
+ */
+function creditLiveSessionTime(session, nowMs = Date.now()) {
+  if (!session) return 0;
+  const deltaSeconds = Math.max(0, Math.floor((nowMs - session.lastCreditedAtMs) / 1000));
+  // Security guardrail: maximum 120s can be credited in one step to prevent clock manipulation
+  const safeDelta = Math.min(deltaSeconds, 120);
+
+  if (safeDelta > 0) {
+    session.lastCreditedAtMs = nowMs;
+    try {
+      db.prepare(`
+        UPDATE live_sessions 
+        SET last_heartbeat = CURRENT_TIMESTAMP, duration_seconds = duration_seconds + ? 
+        WHERE id = ? AND is_active = 1
+      `).run(safeDelta, session.sessionId);
+
+      db.prepare(`
+        UPDATE users 
+        SET total_live_seconds = total_live_seconds + ? 
+        WHERE id = ?
+      `).run(safeDelta, session.userId);
+
+      broadcastLeaderboardUpdate(false);
+    } catch (err) {
+      console.error('[Session] Error crediting live time:', err.message);
+    }
+  }
+  return safeDelta;
+}
+
+/**
+ * Idempotently finalize a user's live study session.
+ * Credits any remaining uncredited time, marks ended_at, and broadcasts live status & leaderboard updates.
+ */
+function finalizeLiveSession(userId, nowMs = Date.now()) {
+  const session = userActiveSessions.get(userId);
+  if (!session) return null;
+
+  // Credit any uncredited delta up to finalization timestamp
+  creditLiveSessionTime(session, nowMs);
+
+  try {
+    // Atomically close the session record
+    db.prepare(`
+      UPDATE live_sessions 
+      SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
+      WHERE id = ? AND is_active = 1
+    `).run(session.sessionId);
+
+    // Update user active status
+    db.prepare('UPDATE users SET is_live = 0, current_room_id = NULL WHERE id = ?').run(session.userId);
+
+    // Compute total verified session duration for streak calculation
+    const finalSession = db.prepare('SELECT duration_seconds FROM live_sessions WHERE id = ?').get(session.sessionId);
+    const totalSecs = finalSession ? finalSession.duration_seconds : 0;
+
+    if (totalSecs >= 60) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const userRec = db.prepare('SELECT last_active_date, current_streak, longest_streak FROM users WHERE id = ?').get(session.userId);
+      if (userRec) {
+        let nextStreak = userRec.current_streak || 1;
+        if (userRec.last_active_date) {
+          const diffDays = Math.floor(Math.abs(new Date() - new Date(userRec.last_active_date)) / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) nextStreak += 1;
+          else if (diffDays > 1) nextStreak = 1;
+        }
+        const nextLongest = Math.max(userRec.longest_streak || 0, nextStreak);
+        db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
+      }
+    }
+  } catch (err) {
+    console.error('[Session] Error finalizing live session:', err.message);
+  }
+
+  // Clean up socket mappings
+  for (const sId of session.sockets) {
+    socketToUserSession.delete(sId);
+  }
+  userActiveSessions.delete(userId);
+
+  if (typeof io !== 'undefined' && io) {
+    io.emit('user-live-status-changed', {
+      userId: session.userId,
+      isLive: false
+    });
+    broadcastLeaderboardUpdate(true);
+  }
+
+  return session;
+}
 
 // ==========================================
 // Global Visitor Presence State (De-duplicated by visitorId)
@@ -267,17 +392,28 @@ function getOrCreateRoomState(roomId) {
   return activeRooms.get(roomId);
 }
 
-// Clean up stale abandoned sessions every 60s
+// Clean up stale abandoned sessions safely every 30s
 function cleanupStaleSessions() {
   try {
-    const staleCutoff = new Date(Date.now() - 90 * 1000).toISOString();
-    const staleSessions = db.prepare(`
+    const staleCutoffMs = Date.now() - 90 * 1000;
+    const staleCutoff = new Date(staleCutoffMs).toISOString();
+
+    // 1. Finalize in-memory sessions that stopped heartbeating
+    for (const [userId, session] of Array.from(userActiveSessions.entries())) {
+      if (session.lastHeartbeatMs < staleCutoffMs) {
+        console.log(`[Session] Auto-finalizing stale in-memory session ${session.sessionId} for user ${userId}`);
+        finalizeLiveSession(userId, session.lastHeartbeatMs);
+      }
+    }
+
+    // 2. Finalize any dangling sessions in the database (e.g. from prior server crashes)
+    const staleDbSessions = db.prepare(`
       SELECT id, user_id, started_at, last_heartbeat 
       FROM live_sessions 
       WHERE is_active = 1 AND last_heartbeat < ?
     `).all(staleCutoff);
 
-    for (const session of staleSessions) {
+    for (const session of staleDbSessions) {
       db.prepare(`
         UPDATE live_sessions 
         SET ended_at = last_heartbeat, is_active = 0 
@@ -290,11 +426,15 @@ function cleanupStaleSessions() {
         WHERE id = ?
       `).run(session.user_id);
     }
+
+    if (staleDbSessions.length > 0) {
+      broadcastLeaderboardUpdate(true);
+    }
   } catch (err) {
-    console.error('Error during stale sessions cleanup:', err);
+    console.error('Error during stale sessions cleanup:', err.message);
   }
 }
-setInterval(cleanupStaleSessions, 60000);
+setInterval(cleanupStaleSessions, 30000);
 cleanupStaleSessions();
 
 // ==========================================
@@ -628,7 +768,7 @@ app.get('/api/blogs/:id', optionalAuthenticateToken, (req, res) => {
       FROM blog_comments c
       JOIN users u ON c.user_id = u.id
       WHERE c.blog_id = ?
-      ORDER BY c.created_at ASC
+      ORDER BY c.created_at DESC
     `).all(blog.id);
 
     res.json({
@@ -761,24 +901,44 @@ app.post('/api/blogs/:id/like', authenticateToken, (req, res) => {
     const blog = db.prepare('SELECT id, likes_count FROM blogs WHERE id = ?').get(req.params.id);
     if (!blog) return res.status(404).json({ error: 'Blog not found' });
 
-    const existingLike = db.prepare('SELECT id FROM blog_likes WHERE blog_id = ? AND user_id = ?').get(blog.id, req.user.id);
+    let userLiked = false;
+    let finalCount = 0;
 
-    if (existingLike) {
-      // Unlike
-      db.prepare('DELETE FROM blog_likes WHERE id = ?').run(existingLike.id);
-      db.prepare('UPDATE blogs SET likes_count = MAX(0, likes_count - 1) WHERE id = ?').run(blog.id);
-      const updated = db.prepare('SELECT likes_count FROM blogs WHERE id = ?').get(blog.id);
-      syncBlogToMongo(blog.id);
-      return res.json({ liked: false, likesCount: updated.likes_count });
-    } else {
-      // Like
-      const likeId = 'like-' + crypto.randomUUID();
-      db.prepare('INSERT INTO blog_likes (id, blog_id, user_id) VALUES (?, ?, ?)').run(likeId, blog.id, req.user.id);
-      db.prepare('UPDATE blogs SET likes_count = likes_count + 1 WHERE id = ?').run(blog.id);
-      const updated = db.prepare('SELECT likes_count FROM blogs WHERE id = ?').get(blog.id);
-      syncBlogToMongo(blog.id);
-      return res.json({ liked: true, likesCount: updated.likes_count });
+    runInTransaction(() => {
+      const existingLike = db.prepare('SELECT id FROM blog_likes WHERE blog_id = ? AND user_id = ?').get(blog.id, req.user.id);
+
+      if (existingLike) {
+        db.prepare('DELETE FROM blog_likes WHERE id = ?').run(existingLike.id);
+        userLiked = false;
+      } else {
+        const likeId = 'like-' + crypto.randomUUID();
+        db.prepare('INSERT INTO blog_likes (id, blog_id, user_id) VALUES (?, ?, ?)').run(likeId, blog.id, req.user.id);
+        userLiked = true;
+      }
+
+      // Recompute authoritative count directly from blog_likes to prevent any drift
+      finalCount = db.prepare('SELECT COUNT(*) as count FROM blog_likes WHERE blog_id = ?').get(blog.id).count;
+      db.prepare('UPDATE blogs SET likes_count = ? WHERE id = ?').run(finalCount, blog.id);
+    });
+
+    syncBlogToMongo(blog.id);
+
+    // Broadcast real-time like update to all connected clients
+    if (typeof io !== 'undefined' && io) {
+      io.emit('blog-like-updated', {
+        blogId: blog.id,
+        likesCount: finalCount,
+        likes_count: finalCount,
+        userId: req.user.id,
+        liked: userLiked
+      });
     }
+
+    return res.json({
+      liked: userLiked,
+      likes_count: finalCount,
+      likesCount: finalCount
+    });
   } catch (error) {
     console.error('Like toggle error:', error);
     res.status(500).json({ error: 'Failed to process like action' });
@@ -791,30 +951,54 @@ app.post('/api/blogs/:id/comments', authenticateToken, (req, res) => {
     if (!rawComment) {
       return res.status(400).json({ error: 'Comment text cannot be empty' });
     }
+    if (rawComment.length > 2000) {
+      return res.status(400).json({ error: 'Comment cannot exceed 2000 characters' });
+    }
 
     const blog = db.prepare('SELECT id FROM blogs WHERE id = ?').get(req.params.id);
     if (!blog) return res.status(404).json({ error: 'Blog not found' });
 
     const commentId = 'comm-' + crypto.randomUUID();
-    db.prepare('INSERT INTO blog_comments (id, blog_id, user_id, comment) VALUES (?, ?, ?, ?)').run(
-      commentId,
-      blog.id,
-      req.user.id,
-      rawComment
-    );
+    let finalCount = 0;
+    let createdComment = null;
 
-    db.prepare('UPDATE blogs SET comments_count = comments_count + 1 WHERE id = ?').run(blog.id);
+    runInTransaction(() => {
+      db.prepare('INSERT INTO blog_comments (id, blog_id, user_id, comment) VALUES (?, ?, ?, ?)').run(
+        commentId,
+        blog.id,
+        req.user.id,
+        rawComment
+      );
+
+      finalCount = db.prepare('SELECT COUNT(*) as count FROM blog_comments WHERE blog_id = ?').get(blog.id).count;
+      db.prepare('UPDATE blogs SET comments_count = ? WHERE id = ?').run(finalCount, blog.id);
+
+      createdComment = db.prepare(`
+        SELECT 
+          c.id, c.comment, c.comment as content, c.created_at,
+          u.id as user_id, u.username, u.display_name, u.display_name as author_name, u.avatar_seed
+        FROM blog_comments c JOIN users u ON c.user_id = u.id
+        WHERE c.id = ?
+      `).get(commentId);
+    });
+
     syncBlogToMongo(blog.id);
 
-    const createdComment = db.prepare(`
-      SELECT 
-        c.id, c.comment, c.comment as content, c.created_at,
-        u.id as user_id, u.username, u.display_name, u.display_name as author_name, u.avatar_seed
-      FROM blog_comments c JOIN users u ON c.user_id = u.id
-      WHERE c.id = ?
-    `).get(commentId);
+    // Broadcast real-time comment to all connected clients
+    if (typeof io !== 'undefined' && io) {
+      io.emit('blog-comment-added', {
+        blogId: blog.id,
+        comment: createdComment,
+        commentsCount: finalCount,
+        comments_count: finalCount
+      });
+    }
 
-    res.status(201).json({ comment: createdComment });
+    res.status(201).json({
+      comment: createdComment,
+      comments_count: finalCount,
+      commentsCount: finalCount
+    });
   } catch (error) {
     console.error('Add comment error:', error);
     res.status(500).json({ error: 'Failed to post comment' });
@@ -833,11 +1017,31 @@ app.delete('/api/blogs/:blogId/comments/:commentId', authenticateToken, (req, re
       return res.status(403).json({ error: 'Unauthorized to delete this comment' });
     }
 
-    db.prepare('DELETE FROM blog_comments WHERE id = ?').run(comment.id);
-    db.prepare('UPDATE blogs SET comments_count = MAX(0, comments_count - 1) WHERE id = ?').run(req.params.blogId);
+    let finalCount = 0;
+    runInTransaction(() => {
+      db.prepare('DELETE FROM blog_comments WHERE id = ?').run(comment.id);
+      finalCount = db.prepare('SELECT COUNT(*) as count FROM blog_comments WHERE blog_id = ?').get(req.params.blogId).count;
+      db.prepare('UPDATE blogs SET comments_count = ? WHERE id = ?').run(finalCount, req.params.blogId);
+    });
+
     syncBlogToMongo(req.params.blogId);
 
-    res.json({ success: true, message: 'Comment deleted' });
+    // Broadcast real-time comment deletion to all connected clients
+    if (typeof io !== 'undefined' && io) {
+      io.emit('blog-comment-deleted', {
+        blogId: req.params.blogId,
+        commentId: comment.id,
+        commentsCount: finalCount,
+        comments_count: finalCount
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Comment deleted',
+      comments_count: finalCount,
+      commentsCount: finalCount
+    });
   } catch (error) {
     console.error('Delete comment error:', error);
     res.status(500).json({ error: 'Failed to delete comment' });
@@ -1132,6 +1336,31 @@ app.get('/api/sessions/history', authenticateToken, (req, res) => {
   }
 });
 
+app.post('/api/sessions/record', authenticateToken, (req, res) => {
+  try {
+    const { durationMinutes = 25, mode = 'work', subject = 'General Study', notes = '' } = req.body;
+    const mins = Math.max(1, Math.min(720, parseInt(durationMinutes) || 25));
+    const sessionId = 'session-' + crypto.randomUUID();
+
+    db.prepare(`
+      INSERT INTO study_sessions (id, user_id, duration_minutes, mode, subject, notes, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(sessionId, req.user.id, mins, mode, (subject || 'General Study').trim(), (notes || '').trim());
+
+    // Update personal offline focus minutes without altering verified live leaderboard study hours
+    db.prepare(`
+      UPDATE users 
+      SET total_focus_minutes = total_focus_minutes + ? 
+      WHERE id = ?
+    `).run(mins, req.user.id);
+
+    res.status(201).json({ success: true, sessionId });
+  } catch (err) {
+    console.error('Record session error:', err);
+    res.status(500).json({ error: 'Failed to record session' });
+  }
+});
+
 // Tasks Endpoints
 app.get('/api/tasks', authenticateToken, (req, res) => {
   try {
@@ -1308,62 +1537,114 @@ io.on('connection', (socket) => {
 
     roomState.participants.set(socket.id, participantInfo);
 
-    // If registered user, start live session in DB
+    // If registered user, manage live session in DB & in-memory
     try {
       if (currentUser.id && !currentUser.id.startsWith('guest-')) {
         const existingUser = db.prepare('SELECT id FROM users WHERE id = ?').get(currentUser.id);
         if (existingUser) {
-          const sessionId = 'live-' + crypto.randomUUID();
           const nowMs = Date.now();
+          let session = userActiveSessions.get(currentUser.id);
 
-          // Close any previous dangling session for this user
-          db.prepare(`
-            UPDATE live_sessions 
-            SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
-            WHERE user_id = ? AND is_active = 1
-          `).run(currentUser.id);
+          if (session) {
+            if (session.roomId === roomId) {
+              // User opened an additional tab or reconnected in the SAME room
+              session.sockets.add(socket.id);
+              socketToUserSession.set(socket.id, currentUser.id);
+              session.lastHeartbeatMs = nowMs;
+              console.log(`[Session] Re-attached tab to active session for ${currentUser.display_name} in room ${roomId} (Total tabs: ${session.sockets.size})`);
+            } else {
+              // User opened/switched to a DIFFERENT study room: cleanly finalize prior room session first!
+              console.log(`[Session] Finalizing prior session in ${session.roomId} for user ${currentUser.display_name} before joining ${roomId}`);
+              finalizeLiveSession(currentUser.id, nowMs);
+              session = null;
+            }
+          }
 
-          db.prepare(`
-            INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, duration_seconds, is_active)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1)
-          `).run(sessionId, currentUser.id, roomId, socket.id);
+          if (!session) {
+            // Check if there is an active session in DB within 90s reconnect grace
+            const recentDbSession = db.prepare(`
+              SELECT id, room_id, strftime('%s', started_at) as start_epoch, strftime('%s', last_heartbeat) as hb_epoch, duration_seconds
+              FROM live_sessions
+              WHERE user_id = ? AND is_active = 1
+              ORDER BY last_heartbeat DESC
+              LIMIT 1
+            `).get(currentUser.id);
 
-          db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
+            if (recentDbSession && recentDbSession.room_id === roomId && (nowMs - (recentDbSession.hb_epoch * 1000)) < 90000) {
+              // Reconnect / refresh to same room: resume session!
+              const startedAtMs = recentDbSession.start_epoch * 1000;
+              session = {
+                userId: currentUser.id,
+                sessionId: recentDbSession.id,
+                roomId,
+                startedAtMs,
+                lastHeartbeatMs: nowMs,
+                lastCreditedAtMs: nowMs,
+                sockets: new Set([socket.id]),
+              };
+              userActiveSessions.set(currentUser.id, session);
+              socketToUserSession.set(socket.id, currentUser.id);
+              console.log(`[Session] Resumed active study session ${session.sessionId} for ${currentUser.display_name} in room ${roomId}`);
+            } else {
+              // Close any dangling session in DB
+              db.prepare(`
+                UPDATE live_sessions 
+                SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
+                WHERE user_id = ? AND is_active = 1
+              `).run(currentUser.id);
 
-          activeLiveSessions.set(socket.id, {
-            sessionId,
-            userId: currentUser.id,
-            roomId,
-            startedAt: nowMs,
-            lastHeartbeat: nowMs,
-            lastCreditedAt: nowMs,
-          });
+              const sessionId = 'live-' + crypto.randomUUID();
+              db.prepare(`
+                INSERT INTO live_sessions (id, user_id, room_id, socket_id, started_at, last_heartbeat, duration_seconds, is_active)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 1)
+              `).run(sessionId, currentUser.id, roomId, socket.id);
 
-          // Acknowledge session started to client with verified start timestamp
+              db.prepare('UPDATE users SET is_live = 1, current_room_id = ? WHERE id = ?').run(roomId, currentUser.id);
+
+              session = {
+                userId: currentUser.id,
+                sessionId,
+                roomId,
+                startedAtMs: nowMs,
+                lastHeartbeatMs: nowMs,
+                lastCreditedAtMs: nowMs,
+                sockets: new Set([socket.id]),
+              };
+              userActiveSessions.set(currentUser.id, session);
+              socketToUserSession.set(socket.id, currentUser.id);
+              console.log(`[Session] Started new live study session ${sessionId} for ${currentUser.display_name} in room ${roomId}`);
+            }
+
+            // Broadcast user is live globally
+            io.emit('user-live-status-changed', {
+              userId: currentUser.id,
+              isLive: true,
+              roomId
+            });
+            broadcastLeaderboardUpdate(true);
+          }
+
+          const elapsedSecs = Math.max(0, Math.floor((nowMs - session.startedAtMs) / 1000));
           socket.emit('session-live-started', {
-            sessionId,
-            startedAt: nowMs,
+            sessionId: session.sessionId,
+            startedAt: session.startedAtMs,
+            elapsedSeconds: elapsedSecs,
             isLive: true
-          });
-
-          // Broadcast user is live globally
-          io.emit('user-live-status-changed', {
-            userId: currentUser.id,
-            isLive: true,
-            roomId
           });
         }
       }
     } catch (sessionErr) {
-      console.warn('[Session] Warning creating live session record:', sessionErr.message);
+      console.warn('[Session] Warning managing live session record:', sessionErr.message);
     }
 
     const allParticipants = Array.from(roomState.participants.values());
+    const currentSession = currentUser.id ? userActiveSessions.get(currentUser.id) : null;
     socket.emit('room-joined', {
       roomId,
       participants: allParticipants,
       messages: roomState.messages,
-      sessionStartedAt: Date.now(),
+      sessionStartedAt: currentSession ? currentSession.startedAtMs : Date.now(),
+      elapsedSeconds: currentSession ? Math.max(0, Math.floor((Date.now() - currentSession.startedAtMs) / 1000)) : 0
     });
 
     socket.to(roomId).emit('user-joined', {
@@ -1373,44 +1654,25 @@ io.on('connection', (socket) => {
     console.log(`[Socket] ${currentUser.display_name} joined room ${roomId} (Total: ${roomState.participants.size})`);
   });
 
-  // 2. Periodic Live Session Heartbeat (Every 25-30s)
+  // 2. Periodic Live Session Heartbeat (Every 15-25s)
   socket.on('session-heartbeat', () => {
-    if (activeLiveSessions.has(socket.id)) {
-      const session = activeLiveSessions.get(socket.id);
-      const nowMs = Date.now();
-      session.lastHeartbeat = nowMs;
+    const userId = socketToUserSession.get(socket.id);
+    if (userId) {
+      const session = userActiveSessions.get(userId);
+      if (session) {
+        const nowMs = Date.now();
+        session.lastHeartbeatMs = nowMs;
+        creditLiveSessionTime(session, nowMs);
 
-      // Incrementally credit verified live seconds while in the room
-      const deltaSeconds = Math.max(0, Math.round((nowMs - session.lastCreditedAt) / 1000));
-      if (deltaSeconds > 0) {
-        session.lastCreditedAt = nowMs;
-        db.prepare(`
-          UPDATE live_sessions 
-          SET last_heartbeat = CURRENT_TIMESTAMP, duration_seconds = duration_seconds + ? 
-          WHERE id = ? AND is_active = 1
-        `).run(deltaSeconds, session.sessionId);
+        const totalElapsedSeconds = Math.max(0, Math.floor((nowMs - session.startedAtMs) / 1000));
+        const userRec = db.prepare('SELECT total_live_seconds FROM users WHERE id = ?').get(session.userId);
 
-        db.prepare(`
-          UPDATE users 
-          SET total_live_seconds = total_live_seconds + ? 
-          WHERE id = ?
-        `).run(deltaSeconds, session.userId);
-      } else {
-        db.prepare(`
-          UPDATE live_sessions 
-          SET last_heartbeat = CURRENT_TIMESTAMP 
-          WHERE id = ? AND is_active = 1
-        `).run(session.sessionId);
+        socket.emit('heartbeat-ack', {
+          verifiedLiveSeconds: totalElapsedSeconds,
+          totalUserLiveSeconds: userRec ? userRec.total_live_seconds : 0,
+          isLive: true
+        });
       }
-
-      const totalElapsedSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
-      const userRec = db.prepare('SELECT total_live_seconds FROM users WHERE id = ?').get(session.userId);
-
-      socket.emit('heartbeat-ack', {
-        verifiedLiveSeconds: totalElapsedSeconds,
-        totalUserLiveSeconds: userRec ? userRec.total_live_seconds : 0,
-        isLive: true
-      });
     }
   });
 
@@ -1569,57 +1831,22 @@ io.on('connection', (socket) => {
     }
     broadcastPresenceStats();
 
-    // Authoritative Live Session End
-    if (activeLiveSessions.has(s.id)) {
-      const session = activeLiveSessions.get(s.id);
-      const nowMs = Date.now();
-      const deltaSeconds = Math.max(0, Math.round((nowMs - session.lastCreditedAt) / 1000));
+    // Multi-tab aware authoritative session handling
+    const userId = socketToUserSession.get(s.id);
+    if (userId) {
+      const session = userActiveSessions.get(userId);
+      if (session) {
+        session.sockets.delete(s.id);
+        socketToUserSession.delete(s.id);
 
-      if (deltaSeconds > 0) {
-        db.prepare(`
-          UPDATE live_sessions 
-          SET duration_seconds = duration_seconds + ? 
-          WHERE id = ? AND is_active = 1
-        `).run(deltaSeconds, session.sessionId);
-
-        db.prepare(`
-          UPDATE users 
-          SET total_live_seconds = total_live_seconds + ? 
-          WHERE id = ?
-        `).run(deltaSeconds, session.userId);
-      }
-
-      db.prepare(`
-        UPDATE live_sessions 
-        SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
-        WHERE id = ?
-      `).run(session.sessionId);
-
-      db.prepare('UPDATE users SET is_live = 0, current_room_id = NULL WHERE id = ?').run(session.userId);
-
-      const totalSessionSeconds = Math.max(0, Math.round((nowMs - session.startedAt) / 1000));
-      // Update streak if session was at least 60s
-      if (totalSessionSeconds >= 60) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const userRec = db.prepare('SELECT last_active_date, current_streak, longest_streak FROM users WHERE id = ?').get(session.userId);
-        if (userRec) {
-          let nextStreak = userRec.current_streak || 1;
-          if (userRec.last_active_date) {
-            const diffDays = Math.floor(Math.abs(new Date() - new Date(userRec.last_active_date)) / (1000 * 60 * 60 * 24));
-            if (diffDays === 1) nextStreak += 1;
-            else if (diffDays > 1) nextStreak = 1;
-          }
-          const nextLongest = Math.max(userRec.longest_streak || 0, nextStreak);
-          db.prepare('UPDATE users SET current_streak = ?, longest_streak = ?, last_active_date = ? WHERE id = ?').run(nextStreak, nextLongest, todayStr, session.userId);
+        if (session.sockets.size === 0) {
+          // Last tab closed or left: finalize session now!
+          finalizeLiveSession(userId, Date.now());
+          console.log(`[Session] Finalized session for user ${userId} in room ${roomId} (all tabs closed/left)`);
+        } else {
+          console.log(`[Session] Closed tab for user ${userId} in room ${roomId} (${session.sockets.size} tabs still active)`);
         }
       }
-
-      activeLiveSessions.delete(s.id);
-
-      io.emit('user-live-status-changed', {
-        userId: session.userId,
-        isLive: false
-      });
     }
 
     console.log(`[Socket] ${s.id} left room ${roomId}`);
