@@ -5,7 +5,7 @@
 > **Submission Deadline:** 27 October 2026, 11:59 PM IST  
 > **Official Form Submission:** [Google Form](https://forms.gle/sBy4sfqyiRG2Zpom9)  
 > **Project Walkthrough & Video Demonstration:** [Watch Video on Google Drive](https://drive.google.com/file/d/1hPIPdMF8TKHNjSq7-3352B8BXfBbK2tk/view?usp=drive_link)  
-> **Live Website:** [https://study-sst.vercel.app/](https://study-sst.vercel.app/)  
+> **Live Application:** [https://study-sst.vercel.app/](https://study-sst.vercel.app/)  
 > **License:** [MIT License](LICENSE)
 
 ---
@@ -144,10 +144,9 @@ It combines:
    ```
 
 5. **Open in your browser:**
-   ```
-   http://localhost:5050
-   ```
-   *(For development mode with hot reload, run `npm run dev` and open `http://localhost:3000`)*
+   - **Live Production Application:** **[https://study-sst.vercel.app/](https://study-sst.vercel.app/)**
+   - **Local Production Server:** `http://localhost:5050`
+   - *(For development mode with hot reload, run `npm run dev` and open `http://localhost:3000`)*
 
 ---
 
