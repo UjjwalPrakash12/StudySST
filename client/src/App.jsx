@@ -14,7 +14,7 @@ import EditProfileModal from './components/EditProfileModal';
 import ProfileModal from './components/ProfileModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
-class RoomErrorBoundary extends React.Component {
+class ViewErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -23,24 +23,26 @@ class RoomErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error('Study room runtime error caught:', error, errorInfo);
+    console.error('Runtime error caught by boundary:', error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="max-w-xl mx-auto my-20 p-8 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] text-center">
-          <h2 className="text-xl font-bold text-[#40382F] mb-2">Notice: Study Hall Temporarily Unavailable</h2>
+        <div className="max-w-xl mx-auto my-20 p-8 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] text-center rounded-lg shadow-sm">
+          <h2 className="text-xl font-bold text-[#40382F] mb-2">
+            {this.props.fallbackTitle || 'Notice: View Temporarily Unavailable'}
+          </h2>
           <p className="text-xs text-[#75695A] mb-6">
-            An unexpected error occurred while connecting to this study hall.
+            {this.props.fallbackMessage || 'An unexpected error occurred while rendering this view.'}
           </p>
           <button
             onClick={() => {
               this.setState({ hasError: false, error: null });
               this.props.onReset?.();
             }}
-            className="px-6 py-2.5 bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-xs border border-[#40382F]/20 transition-all"
+            className="px-6 py-2.5 bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] font-bold text-xs border border-[#40382F]/20 transition-all rounded shadow-xs"
           >
-            Return to Study Lobby
+            {this.props.buttonText || 'Return to Study Lobby'}
           </button>
         </div>
       );
@@ -48,6 +50,7 @@ class RoomErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+const RoomErrorBoundary = ViewErrorBoundary;
 
 function AppContent() {
   const { user, isAuthenticated, updateUserState } = useAuth();
@@ -144,13 +147,19 @@ function AppContent() {
         )}
 
         {currentView === 'profile' && (
-          <ProfileView
-            userId={user?.id}
-            onEditProfile={() => setIsEditProfileOpen(true)}
-            onBack={() => setCurrentView('lobby')}
-            onOpenBlog={() => setCurrentView('blogs')}
-            onJoinRoom={handleJoinRoom}
-          />
+          <ViewErrorBoundary
+            fallbackTitle="Student Profile Temporarily Unavailable"
+            fallbackMessage="An unexpected error occurred while loading this student profile. Your study hours and data remain safe."
+            onReset={() => setCurrentView('lobby')}
+          >
+            <ProfileView
+              userId={user?.id}
+              onEditProfile={() => setIsEditProfileOpen(true)}
+              onBack={() => setCurrentView('lobby')}
+              onOpenBlog={() => setCurrentView('blogs')}
+              onJoinRoom={handleJoinRoom}
+            />
+          </ViewErrorBoundary>
         )}
 
         {currentView === 'admin' && (

@@ -4,7 +4,7 @@ import {
   User, Mail, MapPin, Calendar, BookOpen, GraduationCap, Flame, 
   Clock, Trophy, Award, Zap, TrendingUp, FileText, Users, Share2, 
   Edit3, Check, Shield, Lock, Radio, AlertCircle, Loader2, Sparkles,
-  ExternalLink, ArrowLeft
+  ExternalLink, ArrowLeft, Target
 } from 'lucide-react';
 
 export default function ProfileView({ 
