@@ -98,6 +98,7 @@ function AppContent() {
             <FocusRoomView
               room={activeRoom}
               onLeaveRoom={handleLeaveRoom}
+              onOpenAuth={() => setIsAuthOpen(true)}
             />
           </RoomErrorBoundary>
         )}

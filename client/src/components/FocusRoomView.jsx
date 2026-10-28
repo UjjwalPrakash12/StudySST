@@ -13,7 +13,7 @@ import {
   MessageSquare, MessageCircle, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
   Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff,
-  Music, Smile, ExternalLink, Play, Pause, Disc, Lock
+  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -99,19 +99,15 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
     }
   }, [stream, livekitTrack, peer.mediaState?.video]);
 
-  // Remote audio playback
+  // Remote audio playback (Always attach stream so incoming audio is never muted)
   useEffect(() => {
     if (!livekitTrack && stream && audioRef.current) {
-      if (peer.mediaState?.mic) {
-        if (audioRef.current.srcObject !== stream) {
-          audioRef.current.srcObject = stream;
-        }
-        audioRef.current.play?.().catch(() => {});
-      } else {
-        audioRef.current.srcObject = null;
+      if (audioRef.current.srcObject !== stream) {
+        audioRef.current.srcObject = stream;
       }
+      audioRef.current.play?.().catch(() => {});
     }
-  }, [stream, livekitTrack, peer.mediaState?.mic]);
+  }, [stream, livekitTrack]);
 
   const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled)) || Boolean(livekitTrack);
   const hasVideo = Boolean((peer.mediaState?.video !== false) && isVideoTrackLive);
@@ -128,7 +124,7 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         <audio
           ref={(el) => {
             audioRef.current = el;
-            if (el && stream && peer.mediaState?.mic && el.srcObject !== stream) {
+            if (el && stream && el.srcObject !== stream) {
               el.srcObject = stream;
               el.play?.().catch(() => {});
             }
@@ -242,13 +238,13 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
   );
 }
 
-export default function FocusRoomView({ room, onLeaveRoom }) {
+export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
   const { user, isAuthenticated, refreshUser } = useAuth();
   
   // Media state
   const [localStream, setLocalStream] = useState(null);
   const [micActive, setMicActive] = useState(false);
-  const [videoActive, setVideoActive] = useState(true);
+  const [videoActive, setVideoActive] = useState(() => Boolean(isAuthenticated));
   const [participants, setParticipants] = useState([]);
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream (Mesh fallback)
   const [livekitRemoteTracks, setLivekitRemoteTracks] = useState(new Map()); // participantIdentity -> RemoteTrack
@@ -272,9 +268,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [tasks, setTasks] = useState([]);
   const [newTaskInput, setNewTaskInput] = useState('');
 
-  // Chat & Floating Reactions
+  // Chat & Floating Reactions & Collapsible state
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [isReactionMenuOpen, setIsReactionMenuOpen] = useState(false);
   const [selectedReactionCategory, setSelectedReactionCategory] = useState('Positive');
@@ -285,13 +282,23 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [scholarsSearch, setScholarsSearch] = useState('');
 
-  // Direct Messaging between individual participants
+  // Direct Messaging between individual participants & Collapsible state
   const [activeDmRecipient, setActiveDmRecipient] = useState(null); // peer object { socketId, user: { id, display_name } }
   const [directMessages, setDirectMessages] = useState([]);
+  const [conversationsMap, setConversationsMap] = useState({}); // recipientId/socketId -> dmRecord[]
+  const [isDmCollapsed, setIsDmCollapsed] = useState(false);
   const [dmInput, setDmInput] = useState('');
   const [unreadDms, setUnreadDms] = useState({}); // userId -> count
   const activeDmRecipientRef = useRef(null);
   const activeDrawerRef = useRef(null);
+  const isChatCollapsedRef = useRef(false);
+  const isDmCollapsedRef = useRef(false);
+
+  // Helper to determine whether chat or DM message container is scrolled near bottom
+  const isNearBottom = (element, threshold = 90) => {
+    if (!element) return true;
+    return (element.scrollHeight - element.scrollTop - element.clientHeight) <= threshold;
+  };
 
   // Procedural Soundscapes Engine (12 tracks across 8 categories)
   const [activeSoundId, setActiveSoundId] = useState(() => soundSynthesizer.getActiveTrack?.()?.id || 'gentle-rain');
@@ -330,6 +337,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   useEffect(() => {
     activeDmRecipientRef.current = activeDmRecipient;
   }, [activeDmRecipient]);
+
+  useEffect(() => {
+    isChatCollapsedRef.current = isChatCollapsed;
+  }, [isChatCollapsed]);
+
+  useEffect(() => {
+    isDmCollapsedRef.current = isDmCollapsed;
+  }, [isDmCollapsed]);
 
   useEffect(() => {
     activeDrawerRef.current = activeDrawer;
@@ -602,6 +617,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       if (e.code === 'Space' && !e.repeat && !spacebarPressedRef.current) {
+        if (!isAuthenticated) {
+          onOpenAuth?.();
+          return;
+        }
         spacebarPressedRef.current = true;
         if (!micActiveRef.current) {
           wasMutedBeforePttRef.current = true;
@@ -627,13 +646,22 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [isAuthenticated, onOpenAuth]);
 
-  // Initialize media (360p 15fps camera on by default, microphone muted by default)
+  // Initialize media (360p 15fps camera on by default for authenticated users, microphone muted by default)
   useEffect(() => {
     let mounted = true;
 
     async function setupMedia() {
+      // Guests MUST NOT be prompted for camera permissions
+      if (!isAuthenticated) {
+        setLocalStream(null);
+        localStreamRef.current = null;
+        setVideoActive(false);
+        setMicActive(false);
+        return;
+      }
+
       try {
         // ALWAYS request ONLY video on initial room join. NEVER request microphone!
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -789,7 +817,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       window.removeEventListener('pagehide', handleBeforeUnload);
       stopAllMediaTracks();
     };
-  }, [room.id]);
+  }, [room.id, isAuthenticated]);
 
   // Sync video element when stream or videoActive changes
   useEffect(() => {
@@ -820,9 +848,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   // Setup Socket.IO connection & signaling
   useEffect(() => {
     const socketEndpoint = import.meta.env.VITE_API_URL || window.location.origin;
+    const token = localStorage.getItem('studystream_token');
     const socket = io(socketEndpoint, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
+      auth: { token },
     });
     socketRef.current = socket;
 
@@ -835,9 +865,24 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     socket.emit('join-room', {
       roomId: room.id,
       user: currentUserData,
-      mediaState: { mic: false, video: videoActive },
+      mediaState: { mic: false, video: isAuthenticated ? videoActive : false },
       statusText,
       spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null
+    });
+
+    socket.on('media-denied', ({ error }) => {
+      stopAllMediaTracks();
+      setVideoActive(false);
+      setMicActive(false);
+      onOpenAuth?.();
+    });
+
+    socket.on('chat-denied', ({ error }) => {
+      onOpenAuth?.();
+    });
+
+    socket.on('direct-message-denied', ({ error }) => {
+      onOpenAuth?.();
     });
 
     socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages, sessionStartedAt, elapsedSeconds }) => {
@@ -958,6 +1003,17 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     socket.on('direct-message-received', (dmRecord) => {
       const activeDm = activeDmRecipientRef.current;
       const sId = dmRecord.senderId || dmRecord.sender_id;
+      const convKey = sId || dmRecord.senderSocketId;
+
+      // Persist into conversationsMap
+      if (convKey) {
+        setConversationsMap(prev => {
+          const list = prev[convKey] || [];
+          if (list.some(m => m.id === dmRecord.id)) return prev;
+          return { ...prev, [convKey]: [...list, dmRecord] };
+        });
+      }
+
       const isCurrentConversation = activeDm && (
         (activeDm.user?.id && activeDm.user.id === sId) ||
         (activeDm.socketId && activeDm.socketId === sId) ||
@@ -965,15 +1021,18 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       );
 
       if (isCurrentConversation) {
+        const shouldAutoScroll = isNearBottom(dmScrollRef.current);
         setDirectMessages(prev => {
           if (prev.some(m => m.id === dmRecord.id)) return prev;
           return [...prev, dmRecord];
         });
-        setTimeout(() => {
-          if (dmScrollRef.current) {
-            dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
-          }
-        }, 50);
+        if (shouldAutoScroll) {
+          setTimeout(() => {
+            if (dmScrollRef.current) {
+              dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
+            }
+          }, 50);
+        }
       } else {
         const unreadKey = sId || dmRecord.senderSocketId;
         if (unreadKey) {
@@ -986,6 +1045,21 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
 
     socket.on('direct-message-sent', (dmRecord) => {
+      const rId = dmRecord.recipientId || dmRecord.recipient_id;
+      const convKey = rId || dmRecord.recipientSocketId;
+      if (convKey) {
+        setConversationsMap(prev => {
+          const list = prev[convKey] || [];
+          const idx = list.findIndex(m => m.id === dmRecord.id);
+          if (idx !== -1) {
+            const next = [...list];
+            next[idx] = { ...next[idx], ...dmRecord };
+            return { ...prev, [convKey]: next };
+          }
+          return { ...prev, [convKey]: [...list, dmRecord] };
+        });
+      }
+
       setDirectMessages(prev => {
         const idx = prev.findIndex(m => m.id === dmRecord.id);
         if (idx !== -1) {
@@ -1048,9 +1122,24 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
 
     socket.on('new-message', (msg) => {
-      setMessages(prev => [...prev, msg]);
-      if (activeDrawer !== 'chat') {
+      const container = chatScrollRef.current;
+      const shouldAutoScroll = isNearBottom(container);
+
+      setMessages(prev => {
+        if (prev.some(m => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+
+      if (activeDrawerRef.current !== 'chat' || isChatCollapsedRef.current) {
         setUnreadChatCount(prev => prev + 1);
+      }
+
+      if (shouldAutoScroll) {
+        setTimeout(() => {
+          if (chatScrollRef.current) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+          }
+        }, 50);
       }
     });
 
@@ -1240,15 +1329,35 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
   };
 
+  const handleSetRoomMode = (mode) => {
+    setRoomMode(mode);
+    if (mode === 'silent') {
+      if (micActiveRef.current) {
+        muteMic();
+      }
+    }
+  };
+
   const toggleMic = () => {
+    if (!isAuthenticated) {
+      onOpenAuth?.();
+      return;
+    }
     if (micActive) {
       muteMic();
     } else {
+      if (roomMode === 'silent') {
+        setRoomMode('discussion');
+      }
       unmuteMic();
     }
   };
 
   const toggleVideo = async () => {
+    if (!isAuthenticated) {
+      onOpenAuth?.();
+      return;
+    }
     if (videoActive) {
       // 1. Physically stop all local camera video tracks so the camera hardware and OS indicator turn completely OFF
       if (localStreamRef.current) {
@@ -1480,18 +1589,49 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
   // Direct Messaging Handlers
   const handleOpenDm = async (peer) => {
+    if (!isAuthenticated) {
+      onOpenAuth?.();
+      return;
+    }
     setActiveDmRecipient(peer);
     setActiveDrawer('direct-message');
-    setUnreadDms(prev => {
-      const next = { ...prev };
-      if (peer.user?.id) delete next[peer.user.id];
-      if (peer.socketId) delete next[peer.socketId];
-      return next;
-    });
-    if (isAuthenticated && peer.user?.id) {
+    setIsDmCollapsed(false);
+
+    const key = peer.user?.id || peer.socketId;
+    if (key) {
+      setUnreadDms(prev => {
+        const next = { ...prev };
+        delete next[key];
+        if (peer.user?.id) delete next[peer.user.id];
+        if (peer.socketId) delete next[peer.socketId];
+        return next;
+      });
+    }
+
+    if (key && conversationsMap[key]) {
+      setDirectMessages(conversationsMap[key]);
+    } else {
+      setDirectMessages([]);
+    }
+
+    if (peer.user?.id && !peer.user.id.startsWith('guest-')) {
       try {
         const res = await api.getDirectMessages(peer.user.id);
-        setDirectMessages(res.messages || []);
+        const apiMessages = res.messages || [];
+        setConversationsMap(prev => {
+          const existing = prev[key] || [];
+          const mapById = new Map();
+          existing.forEach(m => mapById.set(m.id, m));
+          apiMessages.forEach(m => mapById.set(m.id, m));
+          const merged = Array.from(mapById.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          return { ...prev, [key]: merged };
+        });
+        setDirectMessages(prev => {
+          const mapById = new Map();
+          prev.forEach(m => mapById.set(m.id, m));
+          apiMessages.forEach(m => mapById.set(m.id, m));
+          return Array.from(mapById.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        });
         setTimeout(() => {
           if (dmScrollRef.current) {
             dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
@@ -1499,19 +1639,21 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
         }, 50);
       } catch (err) {
         console.warn('Failed to load direct messages:', err);
-        setDirectMessages([]);
       }
-    } else {
-      setDirectMessages([]);
     }
   };
 
   const handleSendDm = (e) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      onOpenAuth?.();
+      return;
+    }
     if (!dmInput.trim() || !activeDmRecipient) return;
 
     const text = dmInput.trim();
     const clientMsgId = 'dm-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2, 8)));
+    const convKey = activeDmRecipient.user?.id || activeDmRecipient.socketId;
 
     socketRef.current?.emit('send-direct-message', {
       id: clientMsgId,
@@ -1538,6 +1680,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       recipientName: activeDmRecipient.user?.display_name || 'Scholar',
       recipient_name: activeDmRecipient.user?.display_name || 'Scholar',
     };
+
+    if (convKey) {
+      setConversationsMap(prev => {
+        const list = prev[convKey] || [];
+        if (list.some(m => m.id === clientMsgId)) return prev;
+        return { ...prev, [convKey]: [...list, optimisticMsg] };
+      });
+    }
+
     setDirectMessages(prev => {
       if (prev.some(m => m.id === clientMsgId)) return prev;
       return [...prev, optimisticMsg];
@@ -1597,6 +1748,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
   const handleSendMessage = (e) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      onOpenAuth?.();
+      return;
+    }
     if (!chatInput.trim()) return;
 
     socketRef.current?.emit('send-message', {
@@ -1605,6 +1760,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       user: user || { display_name: 'You' }
     });
     setChatInput('');
+    setTimeout(() => {
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }, 50);
   };
 
   const handleSendReaction = (emoji) => {
@@ -1706,7 +1866,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   });
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] flex flex-col justify-between bg-[#FEFAE0] overflow-hidden select-none">
+    <div className="relative h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] flex flex-col justify-between bg-[#FEFAE0] overflow-hidden select-none">
       
       {/* Reconnecting banner if network drops */}
       {reconnecting && (
@@ -1783,7 +1943,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           {/* Room Audio Mode Pill */}
           <div className="hidden md:flex items-center bg-[#FEFAE0] border border-[rgba(64,56,47,0.2)] p-0.5 rounded-none text-[11px]">
             <button
-              onClick={() => setRoomMode('silent')}
+              onClick={() => handleSetRoomMode('silent')}
               className={`px-2.5 py-1 rounded-none font-semibold transition-all flex items-center space-x-1 ${
                 roomMode === 'silent'
                   ? 'bg-[#CCD5AE] text-[#40382F] font-bold shadow-none'
@@ -1795,7 +1955,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               <span>Silent Study</span>
             </button>
             <button
-              onClick={() => setRoomMode('discussion')}
+              onClick={() => handleSetRoomMode('discussion')}
               className={`px-2.5 py-1 rounded-none font-semibold transition-all flex items-center space-x-1 ${
                 roomMode === 'discussion'
                   ? 'bg-[#D4A373] text-[#40382F] font-bold shadow-none'
@@ -1948,7 +2108,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       </div>
 
       {/* Main Room Body: Responsive Video Grid & Side Drawers */}
-      <div className="relative flex-1 flex overflow-hidden">
+      <div className="relative flex-1 min-h-0 flex overflow-hidden">
         
         {/* Video Tiles Grid & Pagination Controls */}
         <div className="flex-1 p-4 sm:p-5 overflow-y-auto flex flex-col justify-between">
@@ -2007,7 +2167,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                 ) : (
                   <div className="flex flex-col items-center justify-center p-6 text-center">
                     <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#D4A373] flex items-center justify-center text-[#FEFAE0] font-bold text-xl sm:text-2xl border border-[#40382F]/20 mb-2 sm:mb-3">
-                      {user ? user.display_name.charAt(0).toUpperCase() : 'Y'}
+                      {user ? user.display_name.charAt(0).toUpperCase() : 'G'}
                       {isSpeakingLocal && (
                         <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
                       )}
@@ -2015,9 +2175,9 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                         isSpeakingLocal ? 'bg-emerald-500' : 'bg-[#CCD5AE]'
                       }`}></span>
                     </div>
-                    <span className="text-xs font-bold text-[#40382F]">{user ? user.display_name : 'You (Host)'}</span>
+                    <span className="text-xs font-bold text-[#40382F]">{user ? user.display_name : 'Guest'}</span>
                     <span className="text-[10px] text-[#75695A] mt-0.5">
-                      {isSpeakingLocal ? 'Speaking...' : 'Camera Muted • Focused'}
+                      {!isAuthenticated ? 'Sign in to share camera' : isSpeakingLocal ? 'Speaking...' : 'Camera Muted • Focused'}
                     </span>
                   </div>
                 )}
@@ -2463,68 +2623,100 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
         {/* Drawer: Room Chat */}
         {activeDrawer === 'chat' && (
-          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
-            <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
+          <div className={`w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col z-30 animate-fadeIn ${
+            isChatCollapsed ? 'h-auto' : 'h-full min-h-0 justify-between'
+          }`}>
+            <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)] flex-shrink-0">
               <div className="flex items-center space-x-2">
                 <MessageSquare className="w-4 h-4 text-[#D4A373]" />
                 <h3 className="text-sm font-bold text-[#40382F]">Study Hall Chat</h3>
               </div>
-              <button
-                onClick={() => setActiveDrawer(null)}
-                className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div ref={chatScrollRef} className="flex-1 overflow-y-auto py-3 space-y-3">
-              {messages.length === 0 ? (
-                <div className="p-8 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                  Quiet study room. Say hi or encourage peers!
-                </div>
-              ) : (
-                messages.map(msg => {
-                  const isMe = msg.user?.id === user?.id || msg.socketId === socketRef.current?.id;
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                    >
-                      <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
-                        {isMe ? 'You' : msg.user?.display_name || 'Peer'}
-                      </span>
-                      <div
-                        className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
-                          isMe 
-                            ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]' 
-                            : 'bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <form onSubmit={handleSendMessage} className="pt-2 border-t border-[rgba(64,56,47,0.2)]">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  placeholder="Send a quiet encouragement..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  className="flex-1 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-2 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
-                />
+              <div className="flex items-center space-x-1">
                 <button
-                  type="submit"
-                  className="p-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] border border-[#40382F]/20 transition-all"
+                  onClick={() => setIsChatCollapsed(prev => !prev)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                  title={isChatCollapsed ? "Expand chat" : "Collapse chat"}
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  {isChatCollapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => setActiveDrawer(null)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                  title="Close chat"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
+            </div>
+
+            {isChatCollapsed ? (
+              <div
+                onClick={() => setIsChatCollapsed(false)}
+                className="py-3 px-2 text-center text-xs text-[#75695A] hover:text-[#40382F] cursor-pointer bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] mt-2 transition-all"
+              >
+                <span>Chat minimized ({messages.length} messages)</span>
+                <span className="block text-[10px] text-[#D4A373] font-bold mt-0.5">Click to expand</span>
+              </div>
+            ) : (
+              <>
+                <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto py-3 space-y-3">
+                  {messages.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
+                      Quiet study room. Say hi or encourage peers!
+                    </div>
+                  ) : (
+                    messages.map(msg => {
+                      const isMe = msg.user?.id === user?.id || msg.socketId === socketRef.current?.id;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        >
+                          <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
+                            {isMe ? 'You' : msg.user?.display_name || 'Peer'}
+                          </span>
+                          <div
+                            className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
+                              isMe 
+                                ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]' 
+                                : 'bg-[#FAEDCD] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
+                            }`}
+                          >
+                            {msg.text}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <form onSubmit={handleSendMessage} className="pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      placeholder={isAuthenticated ? "Send a quiet encouragement..." : "Sign in to send encouragement in chat..."}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onClick={() => {
+                        if (!isAuthenticated) onOpenAuth?.();
+                      }}
+                      className="flex-1 bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] rounded-none px-3 py-2 text-xs text-[#40382F] placeholder-[#9E9080] focus:outline-none focus:border-[#D4A373]"
+                    />
+                    <button
+                      type="submit"
+                      className="p-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] border border-[#40382F]/20 transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {!isAuthenticated && (
+                    <p className="text-[10px] text-[#75695A] mt-1 cursor-pointer hover:underline" onClick={onOpenAuth}>
+                      🔒 Viewing as guest. <span className="font-bold text-[#40382F]">Sign in</span> to post messages.
+                    </p>
+                  )}
+                </form>
+              </>
+            )}
           </div>
         )}
 
@@ -2673,9 +2865,20 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
         {/* Drawer: 1-to-1 Private Direct Messaging */}
         {activeDrawer === 'direct-message' && (
-          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
-            <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
+          <div className={`w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col z-30 animate-fadeIn ${
+            isDmCollapsed ? 'h-auto' : 'h-full min-h-0 justify-between'
+          }`}>
+            <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)] flex-shrink-0">
               <div className="flex items-center space-x-2 truncate flex-1 min-w-0">
+                {activeDmRecipient && (
+                  <button
+                    onClick={() => setActiveDmRecipient(null)}
+                    className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD] mr-0.5"
+                    title="Back to scholars list"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <MessageCircle className="w-4 h-4 text-[#D4A373] flex-shrink-0" />
                 <div className="truncate">
                   <h3 className="text-sm font-bold text-[#40382F] truncate">
@@ -2687,26 +2890,106 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => setActiveDrawer(null)}
-                className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD] flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center space-x-1 flex-shrink-0">
+                <button
+                  onClick={() => setIsDmCollapsed(prev => !prev)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                  title={isDmCollapsed ? "Expand DMs" : "Collapse DMs"}
+                >
+                  {isDmCollapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => setActiveDrawer(null)}
+                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
+                  title="Close DMs"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Direct Message Body */}
-            {!activeDmRecipient ? (
+            {isDmCollapsed ? (
+              <div
+                onClick={() => setIsDmCollapsed(false)}
+                className="py-3 px-2 text-center text-xs text-[#75695A] hover:text-[#40382F] cursor-pointer bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)] mt-2 transition-all"
+              >
+                <span>DMs minimized ({activeDmRecipient ? activeDmRecipient.user?.display_name : 'No active recipient'})</span>
+                <span className="block text-[10px] text-[#D4A373] font-bold mt-0.5">Click to expand</span>
+              </div>
+            ) : !isAuthenticated ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <Users className="w-8 h-8 text-[#CCD5AE] mb-2" />
-                <p className="text-xs font-bold text-[#40382F] mb-1">Select a Scholar to Message</p>
-                <p className="text-[11px] text-[#75695A]">
-                  Click the message icon on any participant's video tile or in the Scholars list to start a confidential 1-to-1 chat.
+                <div className="w-12 h-12 bg-[#FAEDCD] flex items-center justify-center border border-[rgba(64,56,47,0.2)] mb-3">
+                  <Lock className="w-6 h-6 text-[#D4A373]" />
+                </div>
+                <h4 className="text-sm font-bold text-[#40382F] mb-1">Account Required</h4>
+                <p className="text-xs text-[#75695A] mb-4 leading-relaxed">
+                  Direct messaging is private and requires an authenticated scholar account. Sign in or register to message peers.
                 </p>
+                <button
+                  onClick={onOpenAuth}
+                  className="px-4 py-2 bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20 transition-all"
+                >
+                  Sign In or Register
+                </button>
+              </div>
+            ) : !activeDmRecipient ? (
+              <div className="flex-1 min-h-0 flex flex-col py-2">
+                <div className="pb-2 border-b border-[rgba(64,56,47,0.15)] mb-2">
+                  <span className="text-xs font-bold text-[#40382F]">Select a Scholar to Message</span>
+                  <p className="text-[10px] text-[#75695A]">Choose an active peer in this room to start a 1-to-1 conversation.</p>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+                  {participants.filter(p => p.socketId !== socketRef.current?.id && (!p.user?.id || p.user.id !== user?.id)).length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
+                      No other scholars in this room right now.
+                    </div>
+                  ) : (
+                    participants.filter(p => p.socketId !== socketRef.current?.id && (!p.user?.id || p.user.id !== user?.id)).map(peer => {
+                      const pKey = peer.user?.id || peer.socketId;
+                      const unreadCount = unreadDms[pKey] || (peer.user?.id ? unreadDms[peer.user.id] : 0) || 0;
+                      const isGuest = !peer.user?.id || peer.user.id.startsWith('guest-');
+
+                      return (
+                        <button
+                          key={peer.socketId || peer.user?.id}
+                          onClick={() => {
+                            if (isGuest) {
+                              alert('This user is browsing as an unauthenticated guest and cannot receive direct messages.');
+                              return;
+                            }
+                            handleOpenDm(peer);
+                          }}
+                          className="w-full text-left p-2.5 bg-[#FAEDCD] hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] rounded-none flex items-center justify-between transition-all"
+                        >
+                          <div className="flex items-center space-x-2.5 truncate flex-1 min-w-0">
+                            <div className="w-8 h-8 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xs border border-[#40382F]/20 flex-shrink-0">
+                              {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
+                            </div>
+                            <div className="truncate flex-1">
+                              <p className="text-xs font-bold text-[#40382F] truncate">
+                                {peer.user?.display_name || 'Scholar'}
+                              </p>
+                              <p className="text-[10px] text-[#75695A] truncate">
+                                {isGuest ? 'Guest (Cannot receive DMs)' : (peer.statusText || 'Focusing...')}
+                              </p>
+                            </div>
+                          </div>
+
+                          {unreadCount > 0 && (
+                            <span className="ml-2 px-1.5 py-0.5 rounded-none bg-rose-500 text-[10px] text-white font-bold leading-none flex-shrink-0">
+                              {unreadCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             ) : (
               <>
-                <div ref={dmScrollRef} className="flex-1 overflow-y-auto py-3 space-y-3">
+                <div ref={dmScrollRef} className="flex-1 min-h-0 overflow-y-auto py-3 space-y-3">
                   <div className="p-2.5 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] text-[11px] text-[#75695A] text-center">
                     🔒 Messages are private between you and <span className="font-bold text-[#40382F]">{activeDmRecipient.user?.display_name || 'this scholar'}</span>.
                   </div>
@@ -2742,7 +3025,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                   )}
                 </div>
 
-                <form onSubmit={handleSendDm} className="pt-2 border-t border-[rgba(64,56,47,0.2)]">
+                <form onSubmit={handleSendDm} className="pt-2 border-t border-[rgba(64,56,47,0.2)] flex-shrink-0">
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"

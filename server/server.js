@@ -1089,12 +1089,13 @@ app.get('/api/livekit/token', optionalAuthenticateToken, async (req, res) => {
       ttl: '8h',
     });
 
+    const isAuth = Boolean(req.user);
     at.addGrant({
       roomJoin: true,
       room: roomId,
-      canPublish: true,
+      canPublish: isAuth,
       canSubscribe: true,
-      canPublishData: true,
+      canPublishData: isAuth,
     });
 
     const token = await at.toJwt();
@@ -1440,9 +1441,9 @@ app.get('/api/direct-messages/:recipientId', authenticateToken, (req, res) => {
       SELECT 
         dm.id, dm.room_id as roomId, dm.sender_id as senderId, dm.recipient_id as recipientId,
         dm.message, dm.created_at as createdAt,
-        uSender.display_name as senderName, uSender.avatar_seed as senderAvatar
+        COALESCE(uSender.display_name, 'Scholar') as senderName, COALESCE(uSender.avatar_seed, 'User') as senderAvatar
       FROM direct_messages dm
-      JOIN users uSender ON dm.sender_id = uSender.id
+      LEFT JOIN users uSender ON dm.sender_id = uSender.id
       WHERE ((dm.sender_id = ? AND dm.recipient_id = ?) OR (dm.sender_id = ? AND dm.recipient_id = ?))
     `;
     const params = [req.user.id, recipientId, recipientId, req.user.id];
@@ -1701,6 +1702,25 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   let currentRoomId = null;
   let currentUser = null;
+  let isAuthenticatedUser = false;
+
+  // Verify auth token from socket handshake auth or query
+  const authToken = socket.handshake.auth?.token || socket.handshake.query?.token;
+  if (authToken) {
+    try {
+      const decoded = jwt.verify(authToken, JWT_SECRET);
+      if (decoded && decoded.id) {
+        currentUser = {
+          id: decoded.id,
+          username: decoded.username,
+          display_name: decoded.displayName || decoded.display_name || decoded.username,
+          avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
+        };
+        isAuthenticatedUser = true;
+      }
+    } catch (e) {}
+  }
+  socket.isAuthenticatedUser = isAuthenticatedUser;
 
   // Immediately send initial presence stats to newly connected socket
   socket.emit('presence-stats', getPresenceStats());
@@ -1753,11 +1773,38 @@ io.on('connection', (socket) => {
       handleLeave(socket, currentRoomId);
     }
     currentRoomId = roomId;
-    currentUser = user || {
-      id: 'guest-' + socket.id.slice(0, 5),
-      display_name: 'Guest ' + socket.id.slice(0, 4),
-      avatar_seed: socket.id
-    };
+
+    // Check if token was provided in user payload if not yet verified
+    if (!isAuthenticatedUser && user && user.token) {
+      try {
+        const decoded = jwt.verify(user.token, JWT_SECRET);
+        if (decoded && decoded.id) {
+          currentUser = {
+            id: decoded.id,
+            username: decoded.username,
+            display_name: decoded.displayName || decoded.display_name || decoded.username,
+            avatar_seed: decoded.avatarSeed || decoded.avatar_seed || decoded.username
+          };
+          isAuthenticatedUser = true;
+          socket.isAuthenticatedUser = true;
+        }
+      } catch (e) {}
+    }
+
+    if (isAuthenticatedUser && currentUser) {
+      if (user && user.display_name) {
+        currentUser.display_name = user.display_name;
+      }
+    } else {
+      currentUser = {
+        id: 'guest-' + socket.id.slice(0, 5),
+        display_name: 'Guest ' + socket.id.slice(0, 4),
+        avatar_seed: socket.id,
+        isGuest: true
+      };
+      // GUESTS MUST NEVER HAVE MIC OR VIDEO ACTIVE
+      mediaState = { mic: false, video: false };
+    }
 
     // Update presence record with current roomId
     const vId = socketToVisitor.get(socket.id);
@@ -1990,6 +2037,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('update-media-state', ({ roomId, mediaState }) => {
+    if (!isAuthenticatedUser && (mediaState?.video || mediaState?.mic)) {
+      socket.emit('media-denied', { error: 'Authentication required to use camera or microphone' });
+      return;
+    }
     const roomState = activeRooms.get(roomId);
     if (roomState && roomState.participants.has(socket.id)) {
       const p = roomState.participants.get(socket.id);
@@ -2015,12 +2066,16 @@ io.on('connection', (socket) => {
 
   // Real-time Chat
   socket.on('send-message', ({ roomId, text, user }) => {
+    if (!isAuthenticatedUser) {
+      socket.emit('chat-denied', { error: 'Authentication required to participate in chat' });
+      return;
+    }
     if (!text || !text.trim()) return;
 
     const message = {
       id: 'msg-' + crypto.randomUUID(),
       text: text.trim(),
-      user: user || currentUser,
+      user: currentUser,
       socketId: socket.id,
       timestamp: Date.now()
     };
@@ -2069,6 +2124,10 @@ io.on('connection', (socket) => {
 
   // 1-to-1 Private Direct Messaging between Room Participants
   socket.on('send-direct-message', ({ id, roomId, recipientId, recipientSocketId, text }) => {
+    if (!isAuthenticatedUser) {
+      socket.emit('direct-message-denied', { error: 'Authentication required to send direct messages' });
+      return;
+    }
     const rawText = (text || '').trim();
     if (!rawText || rawText.length > 2000) return;
     if (!currentUser || !currentUser.id) return;
@@ -2081,6 +2140,7 @@ io.on('connection', (socket) => {
       id: dmId,
       roomId,
       room_id: roomId,
+      senderSocketId: socket.id,
       senderId: currentUser.id,
       sender_id: currentUser.id,
       recipientId,
@@ -2123,6 +2183,10 @@ io.on('connection', (socket) => {
     }
 
     for (const sid of targetSockets) {
+      const targetSocket = io.sockets?.sockets?.get(sid);
+      if (targetSocket && targetSocket.isAuthenticatedUser === false) {
+        continue; // Unauthenticated guests cannot receive DMs
+      }
       io.to(sid).emit('direct-message-received', dmRecord);
     }
 
