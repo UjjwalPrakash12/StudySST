@@ -77,6 +77,7 @@ db.exec(`
     is_private INTEGER DEFAULT 0,
     passcode TEXT,
     created_by TEXT,
+    empty_since TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -210,6 +211,9 @@ try {
 } catch (e) {}
 try {
   db.exec("ALTER TABLE users ADD COLUMN is_suspended INTEGER DEFAULT 0;");
+} catch (e) {}
+try {
+  db.exec("ALTER TABLE rooms ADD COLUMN empty_since TEXT DEFAULT NULL;");
 } catch (e) {}
 
 // Strict role sanitization: ONLY ujjwalprakash1812@gmail.com can be superadmin

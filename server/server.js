@@ -120,7 +120,8 @@ async function syncRoomToMongo(room) {
         bg_theme: fullRoom.bg_theme || 'cosmic',
         is_private: Boolean(fullRoom.is_private),
         passcode: fullRoom.passcode || null,
-        created_by: fullRoom.created_by || null
+        created_by: fullRoom.created_by || null,
+        empty_since: fullRoom.empty_since ? new Date(fullRoom.empty_since) : null
       },
       { upsert: true, new: true }
     );
@@ -306,8 +307,8 @@ async function synchronizeCloudDatabase() {
         db.prepare(`
           INSERT INTO rooms (
             id, name, description, category, pomodoro_work_mins, pomodoro_break_mins,
-            bg_theme, is_private, passcode, created_by
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            bg_theme, is_private, passcode, created_by, empty_since
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             description = excluded.description,
@@ -317,11 +318,13 @@ async function synchronizeCloudDatabase() {
             bg_theme = excluded.bg_theme,
             is_private = excluded.is_private,
             passcode = COALESCE(excluded.passcode, rooms.passcode),
-            created_by = excluded.created_by;
+            created_by = excluded.created_by,
+            empty_since = excluded.empty_since;
         `).run(
           r.id, r.name, r.description || '', r.category || 'Silent Study',
           r.pomodoro_work_mins || 25, r.pomodoro_break_mins || 5,
-          r.bg_theme || 'cosmic', r.is_private ? 1 : 0, r.passcode || null, r.created_by || null
+          r.bg_theme || 'cosmic', r.is_private ? 1 : 0, r.passcode || null, r.created_by || null,
+          r.empty_since ? new Date(r.empty_since).toISOString() : null
         );
       }
 
@@ -1593,6 +1596,9 @@ const PREDEFINED_ROOM_IDS = new Set([
   'room-creative-studio'
 ]);
 
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 continuous minutes
+const emptyRoomTimers = new Map();
+
 function getAccurateRoomOnlineCount(roomId) {
   const roomState = activeRooms.get(roomId);
   if (!roomState) return 0;
@@ -1606,20 +1612,202 @@ function getAccurateRoomOnlineCount(roomId) {
   return roomState.participants.size;
 }
 
+async function executeRoomDeletion(roomId, reason = 'inactivity') {
+  if (PREDEFINED_ROOM_IDS.has(roomId)) {
+    console.warn(`[Delete Room] Attempted to delete predefined public room ${roomId}. Blocked.`);
+    return false;
+  }
+
+  const room = db.prepare('SELECT id, name, created_by FROM rooms WHERE id = ?').get(roomId);
+  if (!room) {
+    // Idempotent: already deleted
+    return true;
+  }
+
+  if (emptyRoomTimers.has(roomId)) {
+    clearTimeout(emptyRoomTimers.get(roomId));
+    emptyRoomTimers.delete(roomId);
+  }
+
+  // Notify and cleanly disconnect any occupants
+  const roomState = activeRooms.get(roomId);
+  if (roomState) {
+    let reasonText = 'This study hall was automatically deleted after 15 minutes of inactivity.';
+    if (reason === 'manual_admin') {
+      reasonText = 'This study hall was closed and removed by the Super Admin.';
+    } else if (reason === 'manual_creator') {
+      reasonText = 'This study hall was closed and removed by its creator.';
+    }
+
+    if (io) {
+      io.to(roomId).emit('room-closed', {
+        roomId,
+        reason: reasonText,
+        redirectTo: '/'
+      });
+      io.to(roomId).emit('kicked-by-admin', {
+        roomId,
+        reason: reasonText
+      });
+    }
+
+    for (const [sid] of roomState.participants.entries()) {
+      const sock = io && io.sockets && io.sockets.sockets ? io.sockets.sockets.get(sid) : null;
+      if (sock) {
+        try {
+          sock.leave(roomId);
+        } catch (e) {}
+      }
+    }
+    activeRooms.delete(roomId);
+  }
+
+  // Clean up associated SQLite records
+  try {
+    db.prepare('DELETE FROM direct_messages WHERE room_id = ?').run(roomId);
+    db.prepare('DELETE FROM tasks WHERE room_id = ?').run(roomId);
+    db.prepare('DELETE FROM live_sessions WHERE room_id = ?').run(roomId);
+    db.prepare('DELETE FROM study_sessions WHERE room_id = ?').run(roomId);
+    db.prepare('DELETE FROM rooms WHERE id = ?').run(roomId);
+  } catch (dbErr) {
+    console.error(`[Delete Room] Error removing room ${roomId} from SQLite:`, dbErr.message);
+  }
+
+  // Clean up MongoDB Atlas
+  if (getIsConnected() && models.Room) {
+    try {
+      await models.Room.deleteOne({ id: roomId });
+      if (models.DirectMessage) await models.DirectMessage.deleteMany({ room_id: roomId });
+      if (models.Task) await models.Task.deleteMany({ room_id: roomId });
+      if (models.LiveSession) await models.LiveSession.deleteMany({ room_id: roomId });
+      if (models.StudySession) await models.StudySession.deleteMany({ room_id: roomId });
+    } catch (mongoErr) {
+      console.warn(`[Delete Room] MongoDB cleanup error for ${roomId}:`, mongoErr.message);
+    }
+  }
+
+  if (io) {
+    io.emit('rooms-updated', { action: 'deleted', roomId });
+    io.emit('room-deleted', { roomId, reason });
+  }
+
+  console.log(`[Delete Room] Room ${roomId} deleted successfully (reason: ${reason}).`);
+  return true;
+}
+
+function scheduleRoomDeletion(roomId, delayMs = INACTIVITY_TIMEOUT_MS) {
+  if (PREDEFINED_ROOM_IDS.has(roomId)) return;
+
+  if (emptyRoomTimers.has(roomId)) {
+    clearTimeout(emptyRoomTimers.get(roomId));
+    emptyRoomTimers.delete(roomId);
+  }
+
+  const effectiveDelay = Math.max(0, delayMs);
+  const timer = setTimeout(async () => {
+    emptyRoomTimers.delete(roomId);
+    await checkAndDeleteEmptyRoom(roomId);
+  }, effectiveDelay);
+
+  emptyRoomTimers.set(roomId, timer);
+}
+
+async function checkAndDeleteEmptyRoom(roomId) {
+  if (PREDEFINED_ROOM_IDS.has(roomId)) return false;
+
+  const room = db.prepare('SELECT id, empty_since FROM rooms WHERE id = ?').get(roomId);
+  if (!room) return false;
+
+  const onlineCount = getAccurateRoomOnlineCount(roomId);
+  if (onlineCount > 0) {
+    // Participants present or joined: cancel pending deletion
+    db.prepare('UPDATE rooms SET empty_since = NULL WHERE id = ?').run(roomId);
+    if (getIsConnected() && models.Room) {
+      models.Room.updateOne({ id: roomId }, { $set: { empty_since: null } }).catch(() => {});
+    }
+    return false;
+  }
+
+  if (room.empty_since) {
+    const elapsed = Date.now() - new Date(room.empty_since).getTime();
+    if (elapsed < (INACTIVITY_TIMEOUT_MS - 5000)) {
+      scheduleRoomDeletion(roomId, INACTIVITY_TIMEOUT_MS - elapsed);
+      return false;
+    }
+  }
+
+  return executeRoomDeletion(roomId, 'inactivity');
+}
+
+async function sweepEmptyRooms() {
+  try {
+    const customRooms = db.prepare(`
+      SELECT id, empty_since FROM rooms 
+      WHERE id NOT IN ('room-silent-library', 'room-lofi-cafe', 'room-stem-sprint', 'room-med-mcat', 'room-creative-studio')
+    `).all();
+
+    const now = Date.now();
+    for (const r of customRooms) {
+      const onlineCount = getAccurateRoomOnlineCount(r.id);
+      if (onlineCount > 0) {
+        if (r.empty_since) {
+          db.prepare('UPDATE rooms SET empty_since = NULL WHERE id = ?').run(r.id);
+          if (getIsConnected() && models.Room) {
+            models.Room.updateOne({ id: r.id }, { $set: { empty_since: null } }).catch(() => {});
+          }
+          if (emptyRoomTimers.has(r.id)) {
+            clearTimeout(emptyRoomTimers.get(r.id));
+            emptyRoomTimers.delete(r.id);
+          }
+        }
+      } else {
+        if (!r.empty_since) {
+          const nowIso = new Date().toISOString();
+          db.prepare('UPDATE rooms SET empty_since = ? WHERE id = ?').run(nowIso, r.id);
+          if (getIsConnected() && models.Room) {
+            models.Room.updateOne({ id: r.id }, { $set: { empty_since: new Date(nowIso) } }).catch(() => {});
+          }
+          scheduleRoomDeletion(r.id, INACTIVITY_TIMEOUT_MS);
+        } else {
+          const elapsed = now - new Date(r.empty_since).getTime();
+          if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+            console.log(`[Sweeper] Empty room ${r.id} reached 15m inactivity (elapsed: ${Math.round(elapsed / 1000)}s). Executing auto-delete.`);
+            await executeRoomDeletion(r.id, 'inactivity');
+          } else if (!emptyRoomTimers.has(r.id)) {
+            const remaining = INACTIVITY_TIMEOUT_MS - elapsed;
+            scheduleRoomDeletion(r.id, remaining);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Sweeper] Warning during empty room sweep:', err.message);
+  }
+}
+
 app.get('/api/rooms', (req, res) => {
   try {
     // Explicitly exclude passcode/hash to never expose room credentials
     const rooms = db.prepare(`
-      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, empty_since, created_at
       FROM rooms ORDER BY created_at ASC
     `).all();
 
-    const enrichedRooms = rooms.map(room => ({
-      ...room,
-      is_private: Boolean(room.is_private),
-      isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
-      onlineCount: getAccurateRoomOnlineCount(room.id),
-    }));
+    const enrichedRooms = rooms.map(room => {
+      const onlineCount = getAccurateRoomOnlineCount(room.id);
+      let scheduledDeletionAt = null;
+      if (!PREDEFINED_ROOM_IDS.has(room.id) && onlineCount === 0 && room.empty_since) {
+        scheduledDeletionAt = new Date(new Date(room.empty_since).getTime() + INACTIVITY_TIMEOUT_MS).toISOString();
+      }
+      return {
+        ...room,
+        is_private: Boolean(room.is_private),
+        isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
+        onlineCount,
+        empty_since: room.empty_since || null,
+        scheduledDeletionAt
+      };
+    });
 
     res.json({
       rooms: enrichedRooms,
@@ -1634,7 +1822,7 @@ app.get('/api/rooms', (req, res) => {
 app.get('/api/rooms/:id', async (req, res) => {
   try {
     let room = db.prepare(`
-      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, empty_since, created_at
       FROM rooms WHERE id = ?
     `).get(req.params.id);
 
@@ -1645,21 +1833,24 @@ app.get('/api/rooms/:id', async (req, res) => {
           db.prepare(`
             INSERT INTO rooms (
               id, name, description, category, pomodoro_work_mins, pomodoro_break_mins,
-              bg_theme, is_private, passcode, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              bg_theme, is_private, passcode, created_by, empty_since
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name = excluded.name,
               description = excluded.description,
               category = excluded.category,
               is_private = excluded.is_private,
-              passcode = COALESCE(excluded.passcode, rooms.passcode);
+              passcode = COALESCE(excluded.passcode, rooms.passcode),
+              created_by = excluded.created_by,
+              empty_since = excluded.empty_since;
           `).run(
             mongoRoom.id, mongoRoom.name, mongoRoom.description || '', mongoRoom.category || 'Silent Study',
             mongoRoom.pomodoro_work_mins || 25, mongoRoom.pomodoro_break_mins || 5,
-            mongoRoom.bg_theme || 'cosmic', mongoRoom.is_private ? 1 : 0, mongoRoom.passcode || null, mongoRoom.created_by || null
+            mongoRoom.bg_theme || 'cosmic', mongoRoom.is_private ? 1 : 0, mongoRoom.passcode || null, mongoRoom.created_by || null,
+            mongoRoom.empty_since ? new Date(mongoRoom.empty_since).toISOString() : null
           );
           room = db.prepare(`
-            SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+            SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, empty_since, created_at
             FROM rooms WHERE id = ?
           `).get(req.params.id);
         }
@@ -1670,12 +1861,20 @@ app.get('/api/rooms/:id', async (req, res) => {
       return res.status(404).json({ error: 'Room not found' });
     }
 
+    const onlineCount = getAccurateRoomOnlineCount(room.id);
+    let scheduledDeletionAt = null;
+    if (!PREDEFINED_ROOM_IDS.has(room.id) && onlineCount === 0 && room.empty_since) {
+      scheduledDeletionAt = new Date(new Date(room.empty_since).getTime() + INACTIVITY_TIMEOUT_MS).toISOString();
+    }
+
     res.json({
       room: {
         ...room,
         is_private: Boolean(room.is_private),
         isPredefined: PREDEFINED_ROOM_IDS.has(room.id),
-        onlineCount: getAccurateRoomOnlineCount(room.id)
+        onlineCount,
+        empty_since: room.empty_since || null,
+        scheduledDeletionAt
       }
     });
   } catch (error) {
@@ -1733,9 +1932,10 @@ app.post('/api/rooms', authenticateToken, (req, res) => {
     }
 
     const roomId = 'room-' + crypto.randomUUID().slice(0, 10);
+    const nowIso = new Date().toISOString();
     const insertStmt = db.prepare(`
-      INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, passcode, created_by)
-      SELECT ?, ?, ?, ?, 25, 5, ?, ?, ?, ?
+      INSERT INTO rooms (id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, passcode, created_by, empty_since)
+      SELECT ?, ?, ?, ?, 25, 5, ?, ?, ?, ?, ?
       WHERE (SELECT COUNT(*) FROM rooms) < 50;
     `);
 
@@ -1747,7 +1947,8 @@ app.post('/api/rooms', authenticateToken, (req, res) => {
       bgTheme || 'cosmic',
       isPrivate ? 1 : 0,
       passwordHash,
-      req.user.id
+      req.user.id,
+      nowIso
     );
 
     if (result.changes === 0) {
@@ -1763,17 +1964,22 @@ app.post('/api/rooms', authenticateToken, (req, res) => {
 
     // Fetch created room safely without passcode
     const createdRoom = db.prepare(`
-      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, created_at
+      SELECT id, name, description, category, pomodoro_work_mins, pomodoro_break_mins, bg_theme, is_private, created_by, empty_since, created_at
       FROM rooms WHERE id = ?
     `).get(roomId);
 
     syncRoomToMongo(createdRoom);
 
+    // Schedule 15-minute deletion countdown for the new empty room
+    scheduleRoomDeletion(roomId, INACTIVITY_TIMEOUT_MS);
+
     const safeRoom = {
       ...createdRoom,
       is_private: Boolean(createdRoom.is_private),
       isPredefined: false,
-      onlineCount: 0
+      onlineCount: 0,
+      empty_since: nowIso,
+      scheduledDeletionAt: new Date(new Date(nowIso).getTime() + INACTIVITY_TIMEOUT_MS).toISOString()
     };
 
     io.emit('rooms-updated', {
@@ -1839,6 +2045,45 @@ app.post('/api/rooms/:id/verify-password', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Password verification error:', error);
     res.status(500).json({ error: 'Failed to verify room password' });
+  }
+});
+
+// DELETE /api/rooms/:id (Restricted to Room Creator & Super Admin)
+app.delete('/api/rooms/:id', authenticateToken, async (req, res) => {
+  try {
+    const roomId = req.params.id;
+
+    if (PREDEFINED_ROOM_IDS.has(roomId)) {
+      return res.status(403).json({
+        error: 'The five original public study rooms cannot be deleted.'
+      });
+    }
+
+    const room = db.prepare('SELECT id, name, created_by FROM rooms WHERE id = ?').get(roomId);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    const isCreator = room.created_by && room.created_by === req.user.id;
+
+    if (!isCreator && !isSuperAdmin) {
+      return res.status(403).json({
+        error: 'Forbidden: Only the room creator or the Super Admin can delete this room.'
+      });
+    }
+
+    const reason = isSuperAdmin && !isCreator ? 'manual_admin' : 'manual_creator';
+    await executeRoomDeletion(roomId, reason);
+
+    res.json({
+      success: true,
+      message: `Room "${room.name}" deleted successfully.`,
+      roomId
+    });
+  } catch (error) {
+    console.error('Delete room error:', error);
+    res.status(500).json({ error: 'Failed to delete room' });
   }
 });
 
@@ -2051,7 +2296,7 @@ app.patch('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
   }
 });
 
-app.delete('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
+app.delete('/api/admin/rooms/:id', requireSuperAdmin, async (req, res) => {
   try {
     const roomId = req.params.id;
     if (PREDEFINED_ROOM_IDS.has(roomId)) {
@@ -2063,29 +2308,7 @@ app.delete('/api/admin/rooms/:id', requireSuperAdmin, (req, res) => {
       return res.status(404).json({ error: 'Room not found' });
     }
 
-    // Kick all occupants from this room
-    const roomState = activeRooms.get(roomId);
-    if (roomState) {
-      for (const [sid] of roomState.participants.entries()) {
-        const sock = io.sockets.sockets.get(sid);
-        if (sock) {
-          sock.emit('kicked-by-admin', {
-            roomId,
-            reason: 'This study hall was closed and removed by the Super Admin.'
-          });
-          handleLeave(sock, roomId);
-        }
-      }
-      activeRooms.delete(roomId);
-    }
-
-    db.prepare('DELETE FROM rooms WHERE id = ?').run(roomId);
-    if (getIsConnected() && models.Room) {
-      models.Room.deleteOne({ id: roomId }).catch(() => {});
-    }
-
-    io.emit('rooms-updated', { action: 'deleted', roomId });
-
+    await executeRoomDeletion(roomId, 'manual_admin');
     res.json({ success: true, message: 'Room deleted successfully' });
   } catch (error) {
     console.error('Admin delete room error:', error);
@@ -2867,6 +3090,21 @@ io.on('connection', (socket) => {
 
     roomState.participants.set(socket.id, participantInfo);
 
+    // Cancel empty-room auto-deletion countdown if active
+    if (!PREDEFINED_ROOM_IDS.has(roomId)) {
+      if (emptyRoomTimers.has(roomId)) {
+        clearTimeout(emptyRoomTimers.get(roomId));
+        emptyRoomTimers.delete(roomId);
+      }
+      try {
+        db.prepare('UPDATE rooms SET empty_since = NULL WHERE id = ?').run(roomId);
+        if (getIsConnected() && models.Room) {
+          models.Room.updateOne({ id: roomId }, { $set: { empty_since: null } }).catch(() => {});
+        }
+      } catch (e) {}
+      io.emit('room-inactivity-canceled', { roomId });
+    }
+
     // If registered user, manage live session in DB & in-memory
     try {
       if (currentUser.id && !currentUser.id.startsWith('guest-')) {
@@ -3298,6 +3536,25 @@ io.on('connection', (socket) => {
       });
     }
 
+    // Check if custom room is now completely empty
+    const remainingOnline = getAccurateRoomOnlineCount(roomId);
+    if (remainingOnline === 0 && !PREDEFINED_ROOM_IDS.has(roomId)) {
+      const nowIso = new Date().toISOString();
+      try {
+        db.prepare('UPDATE rooms SET empty_since = ? WHERE id = ?').run(nowIso, roomId);
+        if (getIsConnected() && models.Room) {
+          models.Room.updateOne({ id: roomId }, { $set: { empty_since: new Date(nowIso) } }).catch(() => {});
+        }
+      } catch (e) {}
+      scheduleRoomDeletion(roomId, INACTIVITY_TIMEOUT_MS);
+      io.emit('room-inactivity-started', {
+        roomId,
+        emptySince: nowIso,
+        scheduledDeletionAt: new Date(Date.now() + INACTIVITY_TIMEOUT_MS).toISOString()
+      });
+      console.log(`[Auto-Delete] Custom room ${roomId} became completely empty. 15-minute deletion countdown started.`);
+    }
+
     // Update presence record on leaving room
     const vId = socketToVisitor.get(s.id);
     if (vId && activeVisitors.has(vId)) {
@@ -3370,13 +3627,27 @@ if (shouldListen) {
     if (mongoConnected) {
       await synchronizeCloudDatabase();
     }
+
+    // Initialize empty room sweeper & periodic check
+    try {
+      await sweepEmptyRooms();
+    } catch (e) {}
+    const sweeperInterval = setInterval(sweepEmptyRooms, 30000);
+    if (sweeperInterval.unref) sweeperInterval.unref();
   });
 } else {
   // Serverless / Vercel execution environment
-  connectMongoDB().then(connected => {
+  connectMongoDB().then(async (connected) => {
     if (connected) {
-      synchronizeCloudDatabase().catch(e => console.warn('Cloud sync error in serverless:', e));
+      try {
+        await synchronizeCloudDatabase();
+      } catch (e) {
+        console.warn('Cloud sync error in serverless:', e);
+      }
     }
+    try {
+      await sweepEmptyRooms();
+    } catch (e) {}
   }).catch(err => {
     console.warn('Serverless MongoDB connect error:', err);
   });

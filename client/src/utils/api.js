@@ -92,6 +92,14 @@ export const api = {
     return handleResponse(res);
   },
 
+  async deleteRoom(roomId) {
+    const res = await fetch(`${BASE_URL}/rooms/${roomId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
   async verifyRoomPassword(roomId, password) {
     const res = await fetch(`${BASE_URL}/rooms/${roomId}/verify-password`, {
       method: 'POST',

@@ -612,6 +612,23 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
     onLeaveRoom();
   };
 
+  const isSuperAdmin = user && (user.isSuperAdmin || user.role === 'superadmin' || user.email === 'ujjwalprakash1812@gmail.com');
+  const isCreator = user && room.created_by && room.created_by === user.id;
+  const canDeleteRoom = !room.isPredefined && (isCreator || isSuperAdmin);
+
+  const handleDeleteCurrentRoom = async () => {
+    if (!canDeleteRoom) return;
+    if (!window.confirm(`Are you sure you want to permanently delete this room "${room.name}"? All participants will be redirected to the lobby.`)) {
+      return;
+    }
+    try {
+      await api.deleteRoom(room.id);
+      handleLeaveRoom();
+    } catch (err) {
+      alert(err.message || 'Failed to delete room.');
+    }
+  };
+
   // Push-to-Talk via Spacebar (active in both silent and discussion modes)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -884,6 +901,11 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
     socket.on('kicked-by-admin', ({ reason }) => {
       alert(reason || 'You have been removed from this room by the Super Admin.');
       onLeaveRoom?.();
+    });
+
+    socket.on('room-closed', ({ reason }) => {
+      alert(reason || 'This study room has been closed.');
+      handleLeaveRoom();
     });
 
     socket.on('message-deleted', ({ messageId }) => {
@@ -1924,6 +1946,17 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
           >
             <LogOut className="w-4 h-4 rotate-180" />
           </button>
+
+          {canDeleteRoom && (
+            <button
+              onClick={handleDeleteCurrentRoom}
+              className="p-1.5 rounded-none text-rose-600 hover:text-rose-800 hover:bg-rose-100 border border-transparent hover:border-rose-300 transition-all flex items-center space-x-1"
+              title={isSuperAdmin && !isCreator ? "Delete Room (Super Admin Moderation)" : "Delete Room (Creator)"}
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <span className="text-[11px] font-bold text-rose-700 hidden sm:inline">Delete</span>
+            </button>
+          )}
           
           <div>
             <div className="flex items-center space-x-2">

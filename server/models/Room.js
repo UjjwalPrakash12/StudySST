@@ -10,7 +10,8 @@ const roomSchema = new mongoose.Schema({
   bg_theme: { type: String, default: 'cosmic' },
   is_private: { type: Boolean, default: false },
   passcode: { type: String, default: null },
-  created_by: { type: String, default: null }
+  created_by: { type: String, default: null },
+  empty_since: { type: Date, default: null }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

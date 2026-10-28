@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Sparkles, Search, BookOpen, Coffee, Cpu, Stethoscope, 
   Palette, Play, Shield, Timer, Flame, CheckCircle2, Radio,
-  Plus, Lock, Unlock, Key, X, Eye, EyeOff, AlertCircle
+  Plus, Lock, Unlock, Key, X, Eye, EyeOff, AlertCircle, Trash2, Clock
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { usePresence } from '../context/PresenceContext';
@@ -32,6 +32,7 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Rooms');
+  const [deletingRoomId, setDeletingRoomId] = useState(null);
 
   // Create Room modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -70,17 +71,62 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Real-time socket updates for new rooms
+  // Real-time socket updates for room lifecycle
   useEffect(() => {
     if (!socket) return;
-    const handleRoomsUpdated = () => {
-      fetchRooms();
+    const handleRoomsUpdated = (data) => {
+      if (data && data.action === 'deleted' && data.roomId) {
+        setRooms(prev => prev.filter(r => r.id !== data.roomId));
+      } else {
+        fetchRooms();
+      }
     };
+    const handleRoomDeleted = ({ roomId }) => {
+      setRooms(prev => prev.filter(r => r.id !== roomId));
+    };
+
     socket.on('rooms-updated', handleRoomsUpdated);
+    socket.on('room-deleted', handleRoomDeleted);
+    socket.on('room-inactivity-started', fetchRooms);
+    socket.on('room-inactivity-canceled', fetchRooms);
+
     return () => {
       socket.off('rooms-updated', handleRoomsUpdated);
+      socket.off('room-deleted', handleRoomDeleted);
+      socket.off('room-inactivity-started', fetchRooms);
+      socket.off('room-inactivity-canceled', fetchRooms);
     };
   }, [socket]);
+
+  const handleDeleteRoom = async (e, roomToDelete) => {
+    e.stopPropagation();
+    if (roomToDelete.isPredefined) {
+      alert('The five original public study rooms cannot be deleted.');
+      return;
+    }
+
+    const isSuperAdmin = user && (user.isSuperAdmin || user.role === 'superadmin' || user.email === 'ujjwalprakash1812@gmail.com');
+    const isCreator = user && roomToDelete.created_by && roomToDelete.created_by === user.id;
+
+    if (!isCreator && !isSuperAdmin) {
+      alert('Only the room creator or the Super Admin can delete this room.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete "${roomToDelete.name}"? This action cannot be undone and will close the room for all occupants.`)) {
+      return;
+    }
+
+    try {
+      setDeletingRoomId(roomToDelete.id);
+      await api.deleteRoom(roomToDelete.id);
+      setRooms(prev => prev.filter(r => r.id !== roomToDelete.id));
+    } catch (err) {
+      alert(err.message || 'Failed to delete room.');
+    } finally {
+      setDeletingRoomId(null);
+    }
+  };
 
   const filteredRooms = rooms.filter(room => {
     const matchesSearch = room.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -380,6 +426,12 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredRooms.map(room => {
+            const currentOnline = roomCounts && roomCounts[room.id] !== undefined ? roomCounts[room.id] : (room.onlineCount || 0);
+            const isSuperAdmin = user && (user.isSuperAdmin || user.role === 'superadmin' || user.email === 'ujjwalprakash1812@gmail.com');
+            const isCreator = user && room.created_by && room.created_by === user.id;
+            const canDelete = !room.isPredefined && (isCreator || isSuperAdmin);
+            const isPendingDeletion = !room.isPredefined && currentOnline === 0 && (room.scheduledDeletionAt || room.empty_since);
+
             return (
               <div
                 key={room.id}
@@ -403,10 +455,16 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
                           <span>Public</span>
                         </span>
                       )}
+                      {isPendingDeletion && (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-none bg-amber-100 text-amber-900 border border-amber-300">
+                          <Clock className="w-3 h-3 text-amber-700 animate-pulse" />
+                          <span>Empty (Deletes in 15m)</span>
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-none bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] text-[11px] font-semibold">
                       <span className="w-1.5 h-1.5 bg-[#D4A373] animate-pulse"></span>
-                      <span>{(roomCounts && roomCounts[room.id] !== undefined ? roomCounts[room.id] : (room.onlineCount || 0))} online</span>
+                      <span>{currentOnline} online</span>
                     </div>
                   </div>
 
@@ -431,7 +489,20 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
 
                 {/* Action CTA */}
                 <div className="mt-6 pt-4 border-t border-[rgba(64,56,47,0.2)] flex items-center justify-between">
-                  <span className="text-[11px] text-[#75695A] font-medium">WebRTC Video & Chat</span>
+                  <div className="flex items-center space-x-2">
+                    {canDelete && (
+                      <button
+                        onClick={(e) => handleDeleteRoom(e, room)}
+                        disabled={deletingRoomId === room.id}
+                        title={isSuperAdmin && !isCreator ? "Delete Room (Super Admin Moderation)" : "Delete Room (Creator)"}
+                        className="px-2.5 py-1.5 rounded-none bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 transition-colors flex items-center space-x-1 text-xs font-semibold"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span className="text-[11px]">Delete</span>
+                      </button>
+                    )}
+                    <span className="text-[11px] text-[#75695A] font-medium hidden sm:inline">WebRTC Video & Chat</span>
+                  </div>
                   <button
                     onClick={() => handleRoomClick(room)}
                     className="px-4 py-2 rounded-none bg-[#D4A373] hover:bg-[#C59361] text-[#40382F] text-xs font-bold border border-[#40382F]/20 flex items-center space-x-1.5 transition-all"
