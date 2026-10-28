@@ -64,25 +64,40 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
 
   // LiveKit Track Attachment
   useEffect(() => {
-    if (livekitTrack && videoRef.current) {
+    if (livekitTrack && videoRef.current && peer.mediaState?.video) {
       livekitTrack.attach(videoRef.current);
       return () => {
         try { livekitTrack.detach(videoRef.current); } catch (e) {}
       };
+    } else if (livekitTrack && videoRef.current) {
+      try { livekitTrack.detach(videoRef.current); } catch (e) {}
     }
-  }, [livekitTrack]);
+  }, [livekitTrack, peer.mediaState?.video]);
 
   // WebRTC Mesh Stream Attachment
   useEffect(() => {
     if (!livekitTrack && stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
+      if (peer.mediaState?.video) {
+        videoRef.current.srcObject = stream;
+      } else {
+        videoRef.current.srcObject = null;
+      }
     }
-    if (!livekitTrack && stream && audioRef.current) {
-      audioRef.current.srcObject = stream;
-    }
-  }, [stream, livekitTrack]);
+  }, [stream, livekitTrack, peer.mediaState?.video]);
 
-  const hasVideo = Boolean((livekitTrack || stream) && peer.mediaState?.video);
+  // Remote audio playback
+  useEffect(() => {
+    if (!livekitTrack && stream && audioRef.current) {
+      if (peer.mediaState?.mic) {
+        audioRef.current.srcObject = stream;
+      } else {
+        audioRef.current.srcObject = null;
+      }
+    }
+  }, [stream, livekitTrack, peer.mediaState?.mic]);
+
+  const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState === 'live' && t.enabled)) || Boolean(livekitTrack);
+  const hasVideo = Boolean(peer.mediaState?.video && isVideoTrackLive);
   const isMicMuted = !peer.mediaState?.mic;
 
   return (
@@ -461,21 +476,11 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
     async function setupMedia() {
       try {
-        let stream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: VIDEO_CONSTRAINTS,
-            audio: AUDIO_CONSTRAINTS,
-          });
-          stream.getAudioTracks().forEach(track => {
-            track.enabled = false;
-          });
-        } catch (mediaErr) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: VIDEO_CONSTRAINTS,
-            audio: false,
-          });
-        }
+        // ALWAYS request ONLY video on initial room join. NEVER request microphone!
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: VIDEO_CONSTRAINTS,
+          audio: false,
+        });
 
         if (mounted) {
           localStreamRef.current = stream;
@@ -492,6 +497,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       } catch (err) {
         console.warn('Real webcam not accessible or denied:', err.message);
         if (mounted) {
+          setLocalStream(null);
+          localStreamRef.current = null;
           setVideoActive(false);
           setMicActive(false);
         }
@@ -594,10 +601,14 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
   }, [room.id]);
 
-  // Sync video element when stream is ready
+  // Sync video element when stream or videoActive changes
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current) {
+      if (videoActive && localStream) {
+        localVideoRef.current.srcObject = localStream;
+      } else {
+        localVideoRef.current.srcObject = null;
+      }
     }
   }, [localStream, videoActive]);
 
@@ -814,70 +825,121 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
   }, [room.id, sfuActive]);
 
-  // Unmute microphone with noise cancellation
+  // Explicitly acquire and unmute microphone ONLY on user action
   const unmuteMic = async () => {
-    let stream = localStreamRef.current;
-    let audioTrack = stream ? stream.getAudioTracks()[0] : null;
-
-    if (audioTrack && audioTrack.readyState === 'live') {
-      audioTrack.enabled = true;
-      setMicActive(true);
-      setupVoiceActivityDetection(audioTrack);
-      socketRef.current?.emit('update-media-state', {
-        roomId: room.id,
-        mediaState: { mic: true }
+    try {
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: AUDIO_CONSTRAINTS,
+        video: false, // Explicitly no video
       });
-    } else {
-      try {
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
-        const newTrack = audioStream.getAudioTracks()[0];
-        if (newTrack) {
-          if (!stream) {
-            stream = new MediaStream();
-            localStreamRef.current = stream;
-          }
-          stream.getAudioTracks().forEach(t => {
-            t.stop();
-            stream.removeTrack(t);
-          });
-          stream.addTrack(newTrack);
-          newTrack.enabled = true;
-          setLocalStream(stream);
-          setMicActive(true);
-
-          peerConnectionsRef.current.forEach(pc => {
-            const senders = pc.getSenders();
-            const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
-            if (audioSender) {
-              audioSender.replaceTrack(newTrack);
-            } else {
-              try { pc.addTrack(newTrack, stream); } catch (e) {}
-            }
-          });
-
-          setupVoiceActivityDetection(newTrack);
-
-          socketRef.current?.emit('update-media-state', {
-            roomId: room.id,
-            mediaState: { mic: true }
-          });
+      const newTrack = audioStream.getAudioTracks()[0];
+      if (newTrack) {
+        let stream = localStreamRef.current;
+        if (!stream) {
+          stream = new MediaStream();
+          localStreamRef.current = stream;
         }
-      } catch (err) {
-        console.warn('Microphone permission denied:', err);
-        setMicActive(false);
+        stream.getAudioTracks().forEach(t => {
+          t.stop();
+          stream.removeTrack(t);
+        });
+        stream.addTrack(newTrack);
+        newTrack.enabled = true;
+        setLocalStream(stream);
+        setMicActive(true);
+
+        // Update senders on WebRTC peer connections
+        peerConnectionsRef.current.forEach(pc => {
+          const senders = pc.getSenders();
+          const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.kind === 'audio'));
+          if (audioSender) {
+            audioSender.replaceTrack(newTrack).catch(() => {});
+          } else {
+            try { pc.addTrack(newTrack, stream); } catch (e) {}
+          }
+        });
+
+        // If LiveKit SFU is active, enable mic
+        if (livekitRoomRef.current && livekitRoomRef.current.localParticipant) {
+          try {
+            await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(true);
+          } catch (e) {
+            console.warn('LiveKit enable mic error:', e);
+          }
+        }
+
+        setupVoiceActivityDetection(newTrack);
+
+        setParticipants(prev => prev.map(p => {
+          if (p.socketId === socketRef.current?.id) {
+            return { ...p, mediaState: { ...p.mediaState, mic: true } };
+          }
+          return p;
+        }));
+
+        socketRef.current?.emit('update-media-state', {
+          roomId: room.id,
+          mediaState: { mic: true }
+        });
       }
+    } catch (err) {
+      console.warn('Microphone permission denied or device unavailable:', err);
+      setMicActive(false);
+      alert('Microphone access denied or unavailable. Please check your browser microphone permissions.');
     }
   };
 
   const muteMic = () => {
+    // 1. Physically stop audio capture hardware so OS indicator turns completely OFF
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(track => {
+        track.stop();
         track.enabled = false;
+        localStreamRef.current.removeTrack(track);
       });
     }
+
+    // 2. Clear outgoing audio track on WebRTC peer connections (replaceTrack with null)
+    peerConnectionsRef.current.forEach(pc => {
+      const senders = pc.getSenders();
+      const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.kind === 'audio'));
+      if (audioSender) {
+        try {
+          audioSender.replaceTrack(null).catch(() => {});
+        } catch (e) {}
+      }
+    });
+
+    // 3. If LiveKit SFU is active, disable mic
+    if (livekitRoomRef.current && livekitRoomRef.current.localParticipant) {
+      try {
+        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false);
+      } catch (e) {
+        console.warn('LiveKit disable mic error:', e);
+      }
+    }
+
+    // 4. Teardown Voice Activity Detection
+    if (analyserRef.current) {
+      clearInterval(analyserRef.current);
+      analyserRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch (e) {}
+      audioContextRef.current = null;
+    }
+
     setMicActive(false);
     setIsSpeakingLocal(false);
     isSpeakingLocalRef.current = false;
+
+    setParticipants(prev => prev.map(p => {
+      if (p.socketId === socketRef.current?.id) {
+        return { ...p, mediaState: { ...p.mediaState, mic: false } };
+      }
+      return p;
+    }));
+
     socketRef.current?.emit('speaking-change', { roomId: room.id, isSpeaking: false });
     socketRef.current?.emit('update-media-state', {
       roomId: room.id,
@@ -894,72 +956,119 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   };
 
   const toggleVideo = async () => {
-    let stream = localStreamRef.current;
-    let videoTrack = stream ? stream.getVideoTracks()[0] : null;
-
     if (videoActive) {
-      if (videoTrack) {
-        videoTrack.enabled = false;
+      // 1. Physically stop all local camera video tracks so the camera hardware and OS indicator turn completely OFF
+      if (localStreamRef.current) {
+        localStreamRef.current.getVideoTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+          localStreamRef.current.removeTrack(track);
+        });
+      }
+
+      // 2. Clear local video preview element
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
       }
       setVideoActive(false);
+
+      // 3. Clear outgoing video track on WebRTC peer connections (replaceTrack with null)
+      peerConnectionsRef.current.forEach(pc => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+        if (videoSender) {
+          try {
+            videoSender.replaceTrack(null).catch(() => {});
+          } catch (e) {}
+        }
+      });
+
+      // 4. If LiveKit SFU is active, disable camera on local participant
+      if (livekitRoomRef.current && livekitRoomRef.current.localParticipant) {
+        try {
+          await livekitRoomRef.current.localParticipant.setCameraEnabled(false);
+        } catch (e) {
+          console.warn('LiveKit disable camera error:', e);
+        }
+      }
+
+      // 5. Update local participant entry in state
+      setParticipants(prev => prev.map(p => {
+        if (p.socketId === socketRef.current?.id) {
+          return { ...p, mediaState: { ...p.mediaState, video: false } };
+        }
+        return p;
+      }));
+
+      // 6. Broadcast camera OFF state to all peers
       socketRef.current?.emit('update-media-state', {
         roomId: room.id,
         mediaState: { video: false }
       });
     } else {
-      if (videoTrack && videoTrack.readyState === 'live') {
-        videoTrack.enabled = true;
-        setVideoActive(true);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-        socketRef.current?.emit('update-media-state', {
-          roomId: room.id,
-          mediaState: { video: true }
+      // Re-acquire hardware camera track
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({
+          video: VIDEO_CONSTRAINTS,
+          audio: false, // Ensure audio is NEVER requested here!
         });
-      } else {
-        try {
-          const videoStream = await navigator.mediaDevices.getUserMedia({
-            video: VIDEO_CONSTRAINTS
-          });
-          const newTrack = videoStream.getVideoTracks()[0];
-          if (newTrack) {
-            if (!stream) {
-              stream = new MediaStream();
-              localStreamRef.current = stream;
-            }
-            stream.getVideoTracks().forEach(t => {
-              t.stop();
-              stream.removeTrack(t);
-            });
-            stream.addTrack(newTrack);
-            newTrack.enabled = true;
-            setLocalStream(stream);
-            setVideoActive(true);
-
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = stream;
-            }
-
-            peerConnectionsRef.current.forEach(pc => {
-              const senders = pc.getSenders();
-              const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-              if (videoSender) {
-                videoSender.replaceTrack(newTrack);
-              } else {
-                try { pc.addTrack(newTrack, stream); } catch (e) {}
-              }
-            });
-
-            socketRef.current?.emit('update-media-state', {
-              roomId: room.id,
-              mediaState: { video: true }
-            });
+        const newTrack = videoStream.getVideoTracks()[0];
+        if (newTrack) {
+          let stream = localStreamRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            localStreamRef.current = stream;
           }
-        } catch (err) {
-          console.warn('Webcam permission denied:', err);
-          setVideoActive(false);
+          // Remove old/dead video tracks
+          stream.getVideoTracks().forEach(t => {
+            t.stop();
+            stream.removeTrack(t);
+          });
+          stream.addTrack(newTrack);
+          newTrack.enabled = true;
+          setLocalStream(stream);
+          setVideoActive(true);
+
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+
+          // Replace track on all WebRTC peer connections
+          peerConnectionsRef.current.forEach(pc => {
+            const senders = pc.getSenders();
+            const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+            if (videoSender) {
+              videoSender.replaceTrack(newTrack).catch(err => console.warn('replaceTrack err:', err));
+            } else {
+              try { pc.addTrack(newTrack, stream); } catch (e) {}
+            }
+          });
+
+          // If LiveKit SFU is active, enable camera
+          if (livekitRoomRef.current && livekitRoomRef.current.localParticipant) {
+            try {
+              await livekitRoomRef.current.localParticipant.setCameraEnabled(true);
+            } catch (e) {
+              console.warn('LiveKit enable camera error:', e);
+            }
+          }
+
+          setParticipants(prev => prev.map(p => {
+            if (p.socketId === socketRef.current?.id) {
+              return { ...p, mediaState: { ...p.mediaState, video: true } };
+            }
+            return p;
+          }));
+
+          socketRef.current?.emit('update-media-state', {
+            roomId: room.id,
+            mediaState: { video: true }
+          });
         }
+      } catch (err) {
+        console.warn('Camera restart failed or permission denied:', err);
+        setVideoActive(false);
+        alert('Camera access denied or unavailable. Please check your browser camera permissions.');
       }
     }
   };
@@ -1902,8 +2011,8 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
               onClick={toggleVideo}
               className={`p-3 rounded-none flex items-center justify-center transition-all border ${
                 videoActive
-                  ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20'
-                  : 'bg-[#FEFAE0] text-[#75695A] border-[rgba(64,56,47,0.2)] hover:bg-[#E9EDC9]'
+                  ? 'bg-[#D4A373] text-[#40382F] border-[#40382F]/20 shadow-none'
+                  : 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
               }`}
               title={videoActive ? 'Turn Video Off' : 'Turn Video On'}
             >
