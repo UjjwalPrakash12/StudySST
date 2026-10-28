@@ -14,7 +14,7 @@ function formatLiveHours(seconds) {
   return `${mins}m`;
 }
 
-export default function LeaderboardView() {
+export default function LeaderboardView({ onOpenProfile }) {
   const { user: currentUser } = useAuth();
   const { socket } = usePresence();
   const [period, setPeriod] = useState('all_time'); // 'all_time' | 'weekly' | 'monthly'
@@ -139,9 +139,13 @@ export default function LeaderboardView() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 items-end">
               
               {/* #2 Silver (Soft blush-green surface) */}
-              <div className="bg-[#E9EDC9] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none p-6 text-center order-2 md:order-1 flex flex-col items-center">
+              <div 
+                onClick={() => onOpenProfile?.(top3[1].id)}
+                className="bg-[#E9EDC9] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none p-6 text-center order-2 md:order-1 flex flex-col items-center cursor-pointer hover:border-[#D4A373] transition-all group"
+                title={`View ${top3[1].display_name}'s student profile`}
+              >
                 <div className="relative mb-3">
-                  <div className="w-16 h-16 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-black text-xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
+                  <div className="w-16 h-16 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-black text-xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] group-hover:scale-105 transition-transform">
                     {top3[1].display_name.charAt(0)}
                   </div>
                   <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-none bg-[#FAEDCD] dark:bg-[#25291F] text-[#40382F] dark:text-[#FEFAE0] font-black text-xs border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
@@ -154,7 +158,7 @@ export default function LeaderboardView() {
                   ) : null}
                 </div>
                 <div className="flex items-center space-x-1.5 justify-center">
-                  <h3 className="text-base font-bold text-[#40382F] dark:text-[#FEFAE0]">{top3[1].display_name}</h3>
+                  <h3 className="text-base font-bold text-[#40382F] dark:text-[#FEFAE0] group-hover:text-[#D4A373] transition-colors">{top3[1].display_name}</h3>
                 </div>
                 <p className="text-xs text-[#75695A] dark:text-[#CCD5AE] mt-0.5 truncate max-w-xs font-normal">{top3[1].bio || 'Dedicated scholar'}</p>
                 
@@ -176,10 +180,14 @@ export default function LeaderboardView() {
               </div>
 
               {/* #1 Champion: Refined Terracotta & Sage combination */}
-              <div className="bg-[#FEFAE0] dark:bg-[#25291F] border-2 border-[#D4A373] rounded-none p-7 text-center order-1 md:order-2 flex flex-col items-center md:-translate-y-3 relative">
+              <div 
+                onClick={() => onOpenProfile?.(top3[0].id)}
+                className="bg-[#FEFAE0] dark:bg-[#25291F] border-2 border-[#D4A373] rounded-none p-7 text-center order-1 md:order-2 flex flex-col items-center md:-translate-y-3 relative cursor-pointer hover:shadow-lg transition-all group"
+                title={`View ${top3[0].display_name}'s student profile`}
+              >
                 <div className="relative mb-3">
                   <Crown className="w-6 h-6 text-[#D4A373] fill-[#D4A373] absolute -top-5 left-1/2 -translate-x-1/2 animate-bounce" />
-                  <div className="w-20 h-20 rounded-none bg-[#D4A373] dark:bg-[#A66F3F] text-[#FEFAE0] font-black text-2xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
+                  <div className="w-20 h-20 rounded-none bg-[#D4A373] dark:bg-[#A66F3F] text-[#FEFAE0] font-black text-2xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] group-hover:scale-105 transition-transform">
                     {top3[0].display_name.charAt(0)}
                   </div>
                   <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-black text-xs border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
@@ -187,7 +195,7 @@ export default function LeaderboardView() {
                   </span>
                 </div>
                 <div className="flex items-center space-x-1.5 justify-center">
-                  <h3 className="text-lg font-black text-[#40382F] dark:text-[#FEFAE0]">{top3[0].display_name}</h3>
+                  <h3 className="text-lg font-black text-[#40382F] dark:text-[#FEFAE0] group-hover:text-[#D4A373] transition-colors">{top3[0].display_name}</h3>
                   {top3[0].is_live && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] text-[9px] font-black uppercase tracking-wider border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
                       LIVE NOW
@@ -214,9 +222,13 @@ export default function LeaderboardView() {
               </div>
 
               {/* #3 Bronze (Pale Sand surface) */}
-              <div className="bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none p-6 text-center order-3 flex flex-col items-center">
+              <div 
+                onClick={() => onOpenProfile?.(top3[2].id)}
+                className="bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none p-6 text-center order-3 flex flex-col items-center cursor-pointer hover:border-[#D4A373] transition-all group"
+                title={`View ${top3[2].display_name}'s student profile`}
+              >
                 <div className="relative mb-3">
-                  <div className="w-16 h-16 rounded-none bg-[#E9EDC9] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-black text-xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
+                  <div className="w-16 h-16 rounded-none bg-[#E9EDC9] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-black text-xl flex items-center justify-center border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] group-hover:scale-105 transition-transform">
                     {top3[2].display_name.charAt(0)}
                   </div>
                   <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-none bg-[#CCD5AE] dark:bg-[#25291F] text-[#40382F] dark:text-[#FEFAE0] font-black text-xs border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
@@ -229,7 +241,7 @@ export default function LeaderboardView() {
                   ) : null}
                 </div>
                 <div className="flex items-center space-x-1.5 justify-center">
-                  <h3 className="text-base font-bold text-[#40382F] dark:text-[#FEFAE0]">{top3[2].display_name}</h3>
+                  <h3 className="text-base font-bold text-[#40382F] dark:text-[#FEFAE0] group-hover:text-[#D4A373] transition-colors">{top3[2].display_name}</h3>
                 </div>
                 <p className="text-xs text-[#75695A] dark:text-[#CCD5AE] mt-0.5 truncate max-w-xs font-normal">{top3[2].bio || 'Focus Enthusiast'}</p>
                 
@@ -292,13 +304,17 @@ export default function LeaderboardView() {
                           {idx > 2 && `#${idx + 1}`}
                         </td>
                         <td className="py-3.5">
-                          <div className="flex items-center space-x-2.5">
-                            <div className="w-7 h-7 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-bold flex items-center justify-center text-[11px] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
+                          <div 
+                            onClick={() => onOpenProfile?.(u.id)}
+                            className="flex items-center space-x-2.5 cursor-pointer group"
+                            title={`View ${u.display_name}'s profile`}
+                          >
+                            <div className="w-7 h-7 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-bold flex items-center justify-center text-[11px] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] group-hover:border-[#D4A373]">
                               {u.display_name.charAt(0)}
                             </div>
                             <div>
                               <div className="flex items-center space-x-1.5">
-                                <span className={`text-[#40382F] dark:text-[#FEFAE0] ${isSelf ? 'font-bold' : ''}`}>
+                                <span className={`text-[#40382F] dark:text-[#FEFAE0] group-hover:text-[#D4A373] transition-colors ${isSelf ? 'font-bold' : ''}`}>
                                   {u.display_name}
                                 </span>
                                 {isSelf && (

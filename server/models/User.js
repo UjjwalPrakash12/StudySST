@@ -18,7 +18,21 @@ const userSchema = new mongoose.Schema({
   bio: { type: String, default: 'Ready to focus and achieve big goals!' },
   role: { type: String, enum: ['user', 'admin', 'superadmin'], default: 'user' },
   is_suspended: { type: Boolean, default: false },
-  google_id: { type: String, default: null }
+  google_id: { type: String, default: null },
+  college: { type: String, default: '' },
+  course: { type: String, default: '' },
+  year_of_study: { type: String, default: '' },
+  location: { type: String, default: '' },
+  academic_interests: { type: String, default: '' },
+  subjects: { type: String, default: '' },
+  learning_goals: { type: String, default: '' },
+  skills: { type: String, default: '' },
+  languages: { type: String, default: '' },
+  avatar_url: { type: String, default: null },
+  show_college: { type: Boolean, default: true },
+  show_stats: { type: Boolean, default: true },
+  show_goals: { type: Boolean, default: true },
+  show_location: { type: Boolean, default: true }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

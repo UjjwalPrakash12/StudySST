@@ -9,6 +9,9 @@ import LeaderboardView from './components/LeaderboardView';
 import BlogCommunityView from './components/BlogCommunityView';
 import AdminView from './components/AdminView';
 import AuthModal from './components/AuthModal';
+import ProfileView from './components/ProfileView';
+import EditProfileModal from './components/EditProfileModal';
+import ProfileModal from './components/ProfileModal';
 import { Sparkles, Heart, Shield, Code, Play } from 'lucide-react';
 
 class RoomErrorBoundary extends React.Component {
@@ -47,11 +50,26 @@ class RoomErrorBoundary extends React.Component {
 }
 
 function AppContent() {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated, updateUserState } = useAuth();
   const { updatePresenceView } = usePresence();
-  const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'blogs' | 'analytics' | 'leaderboard'
+  const [currentView, setCurrentView] = useState('lobby'); // 'lobby' | 'room' | 'blogs' | 'analytics' | 'leaderboard' | 'profile'
   const [activeRoom, setActiveRoom] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  
+  // Student Profile modal state
+  const [selectedProfileUser, setSelectedProfileUser] = useState(null); // identifier (id or username) for quick popup
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+
+  // Check URL search params for shared profile link: ?profile=username
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const profileParam = params.get('profile');
+      if (profileParam) {
+        setSelectedProfileUser(profileParam);
+      }
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     updatePresenceView(currentView, activeRoom ? activeRoom.id : null);
@@ -67,6 +85,11 @@ function AppContent() {
     setCurrentView('lobby');
   };
 
+  const handleOpenProfile = (identifier) => {
+    if (!identifier) return;
+    setSelectedProfileUser(identifier);
+  };
+
   return (
     <div className="app-main-wrapper min-h-screen bg-[#FEFAE0] dark:bg-[#25291F] text-[#40382F] dark:text-[#FEFAE0] flex flex-col font-['Inter',sans-serif] transition-colors duration-200">
       {/* Navbar (displayed everywhere except during focused immersion in FocusRoomView) */}
@@ -75,6 +98,7 @@ function AppContent() {
           currentView={currentView}
           setCurrentView={setCurrentView}
           onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenEditProfile={() => setIsEditProfileOpen(true)}
         />
       )}
 
@@ -85,12 +109,14 @@ function AppContent() {
             onJoinRoom={handleJoinRoom}
             onOpenAuth={() => setIsAuthOpen(true)}
             isAuthenticated={isAuthenticated}
+            onOpenProfile={handleOpenProfile}
           />
         )}
 
         {currentView === 'blogs' && (
           <BlogCommunityView
             onOpenAuth={() => setIsAuthOpen(true)}
+            onOpenProfile={handleOpenProfile}
           />
         )}
 
@@ -100,6 +126,7 @@ function AppContent() {
               room={activeRoom}
               onLeaveRoom={handleLeaveRoom}
               onOpenAuth={() => setIsAuthOpen(true)}
+              onOpenProfile={handleOpenProfile}
             />
           </RoomErrorBoundary>
         )}
@@ -111,7 +138,19 @@ function AppContent() {
         )}
 
         {currentView === 'leaderboard' && (
-          <LeaderboardView />
+          <LeaderboardView
+            onOpenProfile={handleOpenProfile}
+          />
+        )}
+
+        {currentView === 'profile' && (
+          <ProfileView
+            userId={user?.id}
+            onEditProfile={() => setIsEditProfileOpen(true)}
+            onBack={() => setCurrentView('lobby')}
+            onOpenBlog={() => setCurrentView('blogs')}
+            onJoinRoom={handleJoinRoom}
+          />
         )}
 
         {currentView === 'admin' && (
@@ -151,6 +190,33 @@ function AppContent() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
+      />
+
+      <EditProfileModal
+        isOpen={isEditProfileOpen}
+        onClose={() => setIsEditProfileOpen(false)}
+        currentUser={user}
+        onProfileUpdated={(updatedUser) => {
+          updateUserState(updatedUser);
+        }}
+      />
+
+      <ProfileModal
+        isOpen={Boolean(selectedProfileUser)}
+        onClose={() => setSelectedProfileUser(null)}
+        userId={selectedProfileUser}
+        onOpenEdit={() => {
+          setSelectedProfileUser(null);
+          setIsEditProfileOpen(true);
+        }}
+        onOpenBlog={() => {
+          setSelectedProfileUser(null);
+          setCurrentView('blogs');
+        }}
+        onJoinRoom={(room) => {
+          setSelectedProfileUser(null);
+          handleJoinRoom(room);
+        }}
       />
     </div>
   );

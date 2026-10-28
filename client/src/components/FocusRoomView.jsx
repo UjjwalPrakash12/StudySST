@@ -13,7 +13,7 @@ import {
   MessageSquare, MessageCircle, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
   Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff,
-  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen, UserX, Trash2
+  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen, UserX, Trash2, User
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -69,7 +69,7 @@ const VIDEO_CONSTRAINTS = {
 /**
  * Dedicated Remote Video Tile with support for both LiveKit SFU tracks and WebRTC Mesh streams.
  */
-function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality, spotifyTrack, onOpenDm }) {
+function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality, spotifyTrack, onOpenDm, onOpenProfile }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
 
@@ -150,8 +150,12 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
           className="w-full h-full object-cover"
         />
       ) : (
-        <div className="flex flex-col items-center justify-center p-6 text-center">
-          <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xl sm:text-2xl border border-[#40382F]/20 mb-2 sm:mb-3">
+        <div 
+          onClick={() => peer.user?.id && onOpenProfile?.(peer.user.id)}
+          className={`flex flex-col items-center justify-center p-6 text-center ${peer.user?.id ? 'cursor-pointer group' : ''}`}
+          title={peer.user?.id ? `View ${peer.user?.display_name || 'peer'}'s profile` : ''}
+        >
+          <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xl sm:text-2xl border border-[#40382F]/20 mb-2 sm:mb-3 group-hover:border-[#D4A373] transition-colors">
             {peer.user?.display_name ? peer.user.display_name.charAt(0).toUpperCase() : 'S'}
             {isSpeaking && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-none animate-ping"></span>
@@ -160,7 +164,7 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
               isSpeaking ? 'bg-emerald-500' : 'bg-[#D4A373]'
             }`}></span>
           </div>
-          <span className="text-xs font-bold text-[#40382F] truncate max-w-[140px]">
+          <span className="text-xs font-bold text-[#40382F] group-hover:text-[#D4A373] transition-colors truncate max-w-[140px]">
             {peer.user?.display_name || 'Study Peer'}
           </span>
           <span className="text-[10px] text-[#75695A] mt-0.5">
@@ -177,6 +181,17 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         </span>
 
         <div className="flex items-center space-x-1">
+          {/* Profile View Button */}
+          {peer.user?.id && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenProfile?.(peer.user.id); }}
+              className="pointer-events-auto p-1 rounded-none bg-[#FEFAE0]/95 hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#40382F] hover:text-[#D4A373] transition-all"
+              title={`View ${peer.user?.display_name || 'peer'}'s profile`}
+            >
+              <User className="w-3 h-3" />
+            </button>
+          )}
+
           {/* Direct Message Button */}
           <button
             onClick={(e) => { e.stopPropagation(); onOpenDm?.(peer); }}
@@ -238,7 +253,7 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
   );
 }
 
-export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
+export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenProfile }) {
   const { user, isAuthenticated, refreshUser } = useAuth();
   
   // Media state
@@ -2311,6 +2326,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
                   connectionQuality={networkQuality}
                   spotifyTrack={peerSpotify}
                   onOpenDm={handleOpenDm}
+                  onOpenProfile={onOpenProfile}
                 />
               );
             })}
@@ -2364,15 +2380,19 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
                           : 'bg-[#FAEDCD] border-[rgba(64,56,47,0.2)]'
                       }`}
                     >
-                      <div className="flex items-center space-x-2.5 truncate flex-1 min-w-0">
-                        <div className="relative w-8 h-8 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xs border border-[#40382F]/20 flex-shrink-0">
+                      <div 
+                        onClick={() => p.user?.id && onOpenProfile?.(p.user.id)}
+                        className={`flex items-center space-x-2.5 truncate flex-1 min-w-0 ${p.user?.id ? 'cursor-pointer group' : ''}`}
+                        title={p.user?.id ? `View ${p.user?.display_name || 'scholar'}'s profile` : ''}
+                      >
+                        <div className="relative w-8 h-8 rounded-none bg-[#CCD5AE] flex items-center justify-center text-[#40382F] font-bold text-xs border border-[#40382F]/20 flex-shrink-0 group-hover:border-[#D4A373] transition-colors">
                           {p.user?.display_name ? p.user.display_name.charAt(0).toUpperCase() : 'S'}
                           {isSpeaking && (
                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-none animate-ping"></span>
                           )}
                         </div>
                         <div className="truncate flex-1">
-                          <p className="text-xs font-bold text-[#40382F] truncate">
+                          <p className="text-xs font-bold text-[#40382F] group-hover:text-[#D4A373] transition-colors truncate">
                             {p.user?.display_name || 'Scholar'} {isMe && '(You)'}
                           </p>
                           <p className="text-[10px] text-[#75695A] truncate">
@@ -2744,7 +2764,11 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth }) {
                           key={msg.id}
                           className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                         >
-                          <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
+                          <span 
+                            onClick={() => msg.user?.id && onOpenProfile?.(msg.user.id)}
+                            className={`text-[10px] text-[#75695A] mb-0.5 px-1 font-medium ${msg.user?.id ? 'cursor-pointer hover:underline hover:text-[#D4A373]' : ''}`}
+                            title={msg.user?.id ? `View ${msg.user?.display_name || 'peer'}'s profile` : ''}
+                          >
                             {isMe ? 'You' : msg.user?.display_name || 'Peer'}
                           </span>
                           <div className="flex items-center space-x-1 group">

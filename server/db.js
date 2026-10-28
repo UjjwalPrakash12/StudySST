@@ -63,6 +63,20 @@ db.exec(`
     last_active_date TEXT,
     bio TEXT DEFAULT 'Ready to focus and achieve big goals!',
     role TEXT DEFAULT 'user',
+    college TEXT DEFAULT '',
+    course TEXT DEFAULT '',
+    year_of_study TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    academic_interests TEXT DEFAULT '',
+    subjects TEXT DEFAULT '',
+    learning_goals TEXT DEFAULT '',
+    skills TEXT DEFAULT '',
+    languages TEXT DEFAULT '',
+    avatar_url TEXT DEFAULT NULL,
+    show_college INTEGER DEFAULT 1,
+    show_stats INTEGER DEFAULT 1,
+    show_goals INTEGER DEFAULT 1,
+    show_location INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -215,6 +229,26 @@ try {
 try {
   db.exec("ALTER TABLE rooms ADD COLUMN empty_since TEXT DEFAULT NULL;");
 } catch (e) {}
+
+const profileCols = [
+  "ALTER TABLE users ADD COLUMN college TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN course TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN year_of_study TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN location TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN academic_interests TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN subjects TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN learning_goals TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN skills TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN languages TEXT DEFAULT '';",
+  "ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT NULL;",
+  "ALTER TABLE users ADD COLUMN show_college INTEGER DEFAULT 1;",
+  "ALTER TABLE users ADD COLUMN show_stats INTEGER DEFAULT 1;",
+  "ALTER TABLE users ADD COLUMN show_goals INTEGER DEFAULT 1;",
+  "ALTER TABLE users ADD COLUMN show_location INTEGER DEFAULT 1;"
+];
+for (const sql of profileCols) {
+  try { db.exec(sql); } catch (e) {}
+}
 
 // Strict role sanitization: ONLY ujjwalprakash1812@gmail.com can be superadmin
 try {

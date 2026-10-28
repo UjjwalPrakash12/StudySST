@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { usePresence } from '../context/PresenceContext';
-import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon, Radio, ShieldCheck } from 'lucide-react';
+import { getFullImageUrl } from '../utils/api';
+import { Flame, Clock, Users, BarChart3, Trophy, LogIn, LogOut, Sparkles, BookOpen, Sun, Moon, Radio, ShieldCheck, User, Edit3 } from 'lucide-react';
 
-export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
+export default function Navbar({ currentView, setCurrentView, onOpenAuth, onOpenEditProfile }) {
   const { user, logout, isAuthenticated } = useAuth();
   const { theme, toggleTheme, isDark } = useTheme();
   const { totalActive, authenticatedCount, anonymousCount } = usePresence();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const totalLiveHours = user ? ((user.total_live_seconds || (user.total_focus_minutes * 60)) / 3600).toFixed(1) : '0.0';
 
@@ -88,6 +90,20 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
             <span>Stats & Streaks</span>
           </button>
 
+          {isAuthenticated && (
+            <button
+              onClick={() => setCurrentView('profile')}
+              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-none text-xs font-semibold transition-all ${
+                currentView === 'profile'
+                  ? 'bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)]'
+                  : 'text-[#75695A] hover:text-[#40382F] hover:bg-[#E9EDC9]/60'
+              }`}
+            >
+              <User className="w-4 h-4 text-[#D4A373]" />
+              <span>My Profile</span>
+            </button>
+          )}
+
           {user && (user.isSuperAdmin || user.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
             <button
               onClick={() => setCurrentView('admin')}
@@ -154,8 +170,8 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
                 <span>{totalLiveHours}h live</span>
               </div>
 
-              {/* User Avatar & Logout */}
-              <div className="flex items-center space-x-2 pl-2 border-l border-[rgba(64,56,47,0.2)]">
+              {/* User Avatar Dropdown & Logout */}
+              <div className="relative flex items-center space-x-2 pl-2 border-l border-[rgba(64,56,47,0.2)]">
                 {user && (user.isSuperAdmin || user.email?.toLowerCase() === 'ujjwalprakash1812@gmail.com') && (
                   <div 
                     onClick={() => setCurrentView('admin')}
@@ -166,13 +182,87 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth }) {
                     <span>ADMIN</span>
                   </div>
                 )}
+                
+                {/* Clickable Profile Avatar */}
                 <div 
-                  onClick={() => setCurrentView('analytics')}
-                  className="w-8 h-8 rounded-none bg-[#D4A373] text-[#FEFAE0] font-bold text-xs flex items-center justify-center cursor-pointer border border-[#40382F]/20"
-                  title={user.display_name}
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="w-8 h-8 rounded-none overflow-hidden bg-[#D4A373] text-[#FEFAE0] font-bold text-xs flex items-center justify-center cursor-pointer border border-[#40382F]/20 hover:scale-105 transition-transform"
+                  title={`${user.display_name} — Click for student options`}
                 >
-                  {user.display_name.charAt(0).toUpperCase()}
+                  {user.avatar_url ? (
+                    <img 
+                      src={getFullImageUrl(user.avatar_url)} 
+                      alt={user.display_name} 
+                      className="w-full h-full object-cover" 
+                    />
+                  ) : (
+                    <span>{(user.display_name || 'U').charAt(0).toUpperCase()}</span>
+                  )}
                 </div>
+
+                {/* User Dropdown Menu */}
+                {isUserMenuOpen && (
+                  <div 
+                    className="absolute right-0 top-11 w-52 bg-[#FEFAE0] dark:bg-[#1E2218] border border-[rgba(64,56,47,0.25)] dark:border-[#40382F]/50 shadow-xl py-1 z-50 animate-fadeIn"
+                    onClick={() => setIsUserMenuOpen(false)}
+                  >
+                    <div className="px-3 py-2 border-b border-[rgba(64,56,47,0.1)] dark:border-[#40382F]/30 bg-[#FAEDCD]/50 dark:bg-[#25291F]">
+                      <p className="text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] truncate">
+                        {user.display_name}
+                      </p>
+                      <p className="text-[10px] text-[#75695A] dark:text-[#A8A29E] font-mono truncate">
+                        @{user.username}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setCurrentView('profile');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-[#40382F] dark:text-[#FEFAE0] hover:bg-[#FAEDCD] dark:hover:bg-[#25291F] flex items-center space-x-2 transition-colors"
+                    >
+                      <User className="w-3.5 h-3.5 text-[#D4A373]" />
+                      <span>My Profile</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (onOpenEditProfile) onOpenEditProfile();
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-[#40382F] dark:text-[#FEFAE0] hover:bg-[#FAEDCD] dark:hover:bg-[#25291F] flex items-center space-x-2 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-[#D4A373]" />
+                      <span>Edit Profile</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setCurrentView('analytics');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-[#40382F] dark:text-[#FEFAE0] hover:bg-[#FAEDCD] dark:hover:bg-[#25291F] flex items-center space-x-2 transition-colors"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5 text-[#75695A]" />
+                      <span>Stats & Streaks</span>
+                    </button>
+
+                    <div className="border-t border-[rgba(64,56,47,0.1)] dark:border-[#40382F]/30 my-1" />
+
+                    <button
+                      onClick={() => {
+                        logout();
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center space-x-2 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                )}
+
                 <button
                   onClick={logout}
                   className="p-1.5 text-[#75695A] hover:text-[#D4A373] hover:bg-[#FAEDCD] rounded-none transition-all"

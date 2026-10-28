@@ -13,7 +13,8 @@ export default function BlogDetailModal({
   onClose, 
   onEditBlog, 
   onDeleteBlog,
-  onOpenAuth 
+  onOpenAuth,
+  onOpenProfile
 }) {
   const { user, isAuthenticated } = useAuth();
   const { socket } = usePresence();
@@ -237,13 +238,17 @@ export default function BlogDetailModal({
             <>
               {/* Author & Meta Row */}
               <div className="flex items-center justify-between pb-4 border-b border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
-                <div className="flex items-center space-x-3">
+                <div 
+                  onClick={() => onOpenProfile?.(blog.author_id)}
+                  className="flex items-center space-x-3 cursor-pointer group/author hover:opacity-85 transition-opacity"
+                  title={`View ${blog.author_name}'s profile`}
+                >
                   <div className="w-10 h-10 rounded-none bg-[#D4A373] dark:bg-[#A66F3F] text-[#FEFAE0] font-bold flex items-center justify-center text-sm border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
                     {blog.author_name ? blog.author_name.charAt(0) : 'U'}
                   </div>
                   <div>
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm font-bold text-[#40382F] dark:text-[#FEFAE0]">{blog.author_name}</span>
+                      <span className="text-sm font-bold text-[#40382F] dark:text-[#FEFAE0] group-hover/author:text-[#D4A373] transition-colors">{blog.author_name}</span>
                       <span className="text-xs text-[#75695A] dark:text-[#CCD5AE]">@{blog.author_username}</span>
                     </div>
                     <div className="flex items-center space-x-2 text-[11px] text-[#75695A] dark:text-[#CCD5AE] mt-0.5">
@@ -374,12 +379,19 @@ export default function BlogDetailModal({
                           className="p-3.5 bg-[#FAEDCD] dark:bg-[#343B2B] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] rounded-none flex items-start justify-between gap-3 group"
                         >
                           <div className="flex items-start space-x-2.5">
-                            <div className="w-7 h-7 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-bold flex items-center justify-center text-[10px] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] shrink-0">
+                            <div 
+                              onClick={() => onOpenProfile?.(comment.user_id)}
+                              className="w-7 h-7 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-bold flex items-center justify-center text-[10px] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48] shrink-0 cursor-pointer hover:border-[#D4A373]"
+                              title={`View ${comment.author_name}'s profile`}
+                            >
                               {comment.author_name ? comment.author_name.charAt(0) : 'U'}
                             </div>
                             <div>
                               <div className="flex items-center space-x-2">
-                                <span className="text-xs font-bold text-[#40382F] dark:text-[#FEFAE0]">
+                                <span 
+                                  onClick={() => onOpenProfile?.(comment.user_id)}
+                                  className="text-xs font-bold text-[#40382F] dark:text-[#FEFAE0] cursor-pointer hover:text-[#D4A373] transition-colors"
+                                >
                                   {comment.author_name}
                                 </span>
                                 <span className="text-[10px] text-[#75695A] dark:text-[#CCD5AE] font-mono">

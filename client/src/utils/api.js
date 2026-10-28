@@ -72,6 +72,36 @@ export const api = {
     return handleResponse(res);
   },
 
+  async getUserProfile(identifier) {
+    const res = await fetch(`${BASE_URL}/users/profile/${encodeURIComponent(identifier)}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async updateStudentProfile(profileData) {
+    const res = await fetch(`${BASE_URL}/users/profile`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(profileData),
+    });
+    return handleResponse(res);
+  },
+
+  async uploadAvatar(file) {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const token = localStorage.getItem('studystream_token');
+    const res = await fetch(`${BASE_URL}/users/profile/avatar`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
   // Rooms
   async getRooms() {
     const res = await fetch(`${BASE_URL}/rooms`);

@@ -46,7 +46,21 @@ async function syncUserToMongo(user) {
         bio: fullUser.bio || '',
         role: fullUser.role || 'user',
         is_suspended: Boolean(fullUser.is_suspended),
-        google_id: fullUser.google_id || null
+        google_id: fullUser.google_id || null,
+        college: fullUser.college || '',
+        course: fullUser.course || '',
+        year_of_study: fullUser.year_of_study || '',
+        location: fullUser.location || '',
+        academic_interests: fullUser.academic_interests || '',
+        subjects: fullUser.subjects || '',
+        learning_goals: fullUser.learning_goals || '',
+        skills: fullUser.skills || '',
+        languages: fullUser.languages || '',
+        avatar_url: fullUser.avatar_url || null,
+        show_college: fullUser.show_college !== undefined ? Boolean(fullUser.show_college) : true,
+        show_stats: fullUser.show_stats !== undefined ? Boolean(fullUser.show_stats) : true,
+        show_goals: fullUser.show_goals !== undefined ? Boolean(fullUser.show_goals) : true,
+        show_location: fullUser.show_location !== undefined ? Boolean(fullUser.show_location) : true
       },
       { upsert: true, new: true }
     );
@@ -273,8 +287,11 @@ async function synchronizeCloudDatabase() {
             id, username, email, password_hash, display_name, avatar_seed,
             daily_goal_minutes, total_focus_minutes, total_live_seconds,
             is_live, current_room_id, current_streak, longest_streak,
-            last_active_date, bio, role, is_suspended, google_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            last_active_date, bio, role, is_suspended, google_id,
+            college, course, year_of_study, location, academic_interests,
+            subjects, learning_goals, skills, languages, avatar_url,
+            show_college, show_stats, show_goals, show_location
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             username = excluded.username,
             email = excluded.email,
@@ -292,12 +309,32 @@ async function synchronizeCloudDatabase() {
             bio = excluded.bio,
             role = excluded.role,
             is_suspended = excluded.is_suspended,
-            google_id = excluded.google_id;
+            google_id = excluded.google_id,
+            college = excluded.college,
+            course = excluded.course,
+            year_of_study = excluded.year_of_study,
+            location = excluded.location,
+            academic_interests = excluded.academic_interests,
+            subjects = excluded.subjects,
+            learning_goals = excluded.learning_goals,
+            skills = excluded.skills,
+            languages = excluded.languages,
+            avatar_url = excluded.avatar_url,
+            show_college = excluded.show_college,
+            show_stats = excluded.show_stats,
+            show_goals = excluded.show_goals,
+            show_location = excluded.show_location;
         `).run(
           u.id, u.username, u.email, u.password_hash || '', u.display_name, u.avatar_seed || 'Felix',
           u.daily_goal_minutes || 120, u.total_focus_minutes || 0, u.total_live_seconds || 0,
           u.is_live ? 1 : 0, u.current_room_id || null, u.current_streak || 0, u.longest_streak || 0,
-          u.last_active_date || null, u.bio || '', u.role || 'user', u.is_suspended ? 1 : 0, u.google_id || null
+          u.last_active_date || null, u.bio || '', u.role || 'user', u.is_suspended ? 1 : 0, u.google_id || null,
+          u.college || '', u.course || '', u.year_of_study || '', u.location || '', u.academic_interests || '',
+          u.subjects || '', u.learning_goals || '', u.skills || '', u.languages || '', u.avatar_url || null,
+          u.show_college !== undefined ? (u.show_college ? 1 : 0) : 1,
+          u.show_stats !== undefined ? (u.show_stats ? 1 : 0) : 1,
+          u.show_goals !== undefined ? (u.show_goals ? 1 : 0) : 1,
+          u.show_location !== undefined ? (u.show_location ? 1 : 0) : 1
         );
       }
 
@@ -486,6 +523,38 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Invalid image type. Only JPEG, PNG, and WebP are allowed.'));
+    }
+  }
+});
+
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+try { fs.mkdirSync(avatarsDir, { recursive: true }); } catch (e) {}
+
+const avatarStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    let dest = avatarsDir;
+    if (Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)) {
+      dest = path.join('/tmp', 'uploads', 'avatars');
+    }
+    try { fs.mkdirSync(dest, { recursive: true }); } catch (e) {}
+    cb(null, dest);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.png';
+    cb(null, 'avatar-' + req.user.id + '-' + Date.now() + safeExt);
+  }
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4MB
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid image format. Only JPEG, PNG, and WebP images are allowed.'));
     }
   }
 });
@@ -899,15 +968,32 @@ app.post('/api/auth/login', async (req, res) => {
               id, username, email, password_hash, display_name, avatar_seed,
               daily_goal_minutes, total_focus_minutes, total_live_seconds,
               is_live, current_room_id, current_streak, longest_streak,
-              last_active_date, bio, role, is_suspended, google_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              last_active_date, bio, role, is_suspended, google_id,
+              college, course, year_of_study, location, academic_interests,
+              subjects, learning_goals, skills, languages, avatar_url,
+              show_college, show_stats, show_goals, show_location
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               username = excluded.username,
               email = excluded.email,
               password_hash = excluded.password_hash,
               display_name = excluded.display_name,
               role = excluded.role,
-              is_suspended = excluded.is_suspended;
+              is_suspended = excluded.is_suspended,
+              college = excluded.college,
+              course = excluded.course,
+              year_of_study = excluded.year_of_study,
+              location = excluded.location,
+              academic_interests = excluded.academic_interests,
+              subjects = excluded.subjects,
+              learning_goals = excluded.learning_goals,
+              skills = excluded.skills,
+              languages = excluded.languages,
+              avatar_url = excluded.avatar_url,
+              show_college = excluded.show_college,
+              show_stats = excluded.show_stats,
+              show_goals = excluded.show_goals,
+              show_location = excluded.show_location;
           `).run(
             mongoUser.id, mongoUser.username, mongoUser.email, mongoUser.password_hash || '',
             mongoUser.display_name, mongoUser.avatar_seed || 'Felix',
@@ -916,7 +1002,15 @@ app.post('/api/auth/login', async (req, res) => {
             mongoUser.current_room_id || null, mongoUser.current_streak || 0,
             mongoUser.longest_streak || 0, mongoUser.last_active_date || null,
             mongoUser.bio || '', mongoUser.role || 'user', mongoUser.is_suspended ? 1 : 0,
-            mongoUser.google_id || null
+            mongoUser.google_id || null,
+            mongoUser.college || '', mongoUser.course || '', mongoUser.year_of_study || '',
+            mongoUser.location || '', mongoUser.academic_interests || '', mongoUser.subjects || '',
+            mongoUser.learning_goals || '', mongoUser.skills || '', mongoUser.languages || '',
+            mongoUser.avatar_url || null,
+            mongoUser.show_college !== undefined ? (mongoUser.show_college ? 1 : 0) : 1,
+            mongoUser.show_stats !== undefined ? (mongoUser.show_stats ? 1 : 0) : 1,
+            mongoUser.show_goals !== undefined ? (mongoUser.show_goals ? 1 : 0) : 1,
+            mongoUser.show_location !== undefined ? (mongoUser.show_location ? 1 : 0) : 1
           );
           user = db.prepare('SELECT * FROM users WHERE id = ?').get(mongoUser.id);
         }
@@ -1037,9 +1131,103 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+function calculateAchievements({ totalLiveSeconds, currentStreak, longestStreak, sessionsCount, blogsCount, roomsCreatedCount }) {
+  const maxStreak = Math.max(Number(currentStreak) || 0, Number(longestStreak) || 0);
+  const liveSecs = Number(totalLiveSeconds) || 0;
+  const sessions = Number(sessionsCount) || 0;
+  const blogs = Number(blogsCount) || 0;
+  const rooms = Number(roomsCreatedCount) || 0;
+
+  return [
+    {
+      id: 'first_session',
+      title: 'First Focus Step',
+      description: 'Completed your first study session in StudySST.',
+      category: 'Milestone',
+      icon: 'Zap',
+      unlocked: sessions >= 1,
+      progress: sessions >= 1 ? 100 : 0
+    },
+    {
+      id: 'consistent_learner',
+      title: 'Consistent Learner',
+      description: 'Completed 10 focus sessions or maintained a 3-day streak.',
+      category: 'Dedication',
+      icon: 'TrendingUp',
+      unlocked: sessions >= 10 || maxStreak >= 3,
+      progress: Math.min(100, Math.max(Math.round((sessions / 10) * 100), Math.round((maxStreak / 3) * 100)))
+    },
+    {
+      id: '10_hours',
+      title: 'Focus Apprentice',
+      description: 'Logged 10+ hours of verified live study time.',
+      category: 'Time',
+      icon: 'Clock',
+      unlocked: liveSecs >= 10 * 3600,
+      progress: Math.min(100, Math.round((liveSecs / (10 * 3600)) * 100))
+    },
+    {
+      id: '50_hours',
+      title: 'Dedicated Scholar',
+      description: 'Logged 50+ hours of verified live study time.',
+      category: 'Time',
+      icon: 'BookOpen',
+      unlocked: liveSecs >= 50 * 3600,
+      progress: Math.min(100, Math.round((liveSecs / (50 * 3600)) * 100))
+    },
+    {
+      id: '100_hours',
+      title: 'Master of Focus',
+      description: 'Reached the elite milestone of 100+ verified live study hours.',
+      category: 'Time',
+      icon: 'Award',
+      unlocked: liveSecs >= 100 * 3600,
+      progress: Math.min(100, Math.round((liveSecs / (100 * 3600)) * 100))
+    },
+    {
+      id: '7_day_streak',
+      title: 'Unstoppable Momentum',
+      description: 'Maintained a continuous 7-day study streak.',
+      category: 'Streak',
+      icon: 'Flame',
+      unlocked: maxStreak >= 7,
+      progress: Math.min(100, Math.round((maxStreak / 7) * 100))
+    },
+    {
+      id: 'first_blog',
+      title: 'Knowledge Sharer',
+      description: 'Published your first community study blog.',
+      category: 'Community',
+      icon: 'FileText',
+      unlocked: blogs >= 1,
+      progress: blogs >= 1 ? 100 : 0
+    },
+    {
+      id: 'room_creator',
+      title: 'Study Hall Host',
+      description: 'Created a custom study room for collaborative focus.',
+      category: 'Community',
+      icon: 'Users',
+      unlocked: rooms >= 1,
+      progress: rooms >= 1 ? 100 : 0
+    }
+  ];
+}
+
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   try {
-    const user = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, is_suspended, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare(`
+      SELECT 
+        id, username, email, display_name, avatar_seed, avatar_url,
+        daily_goal_minutes, total_focus_minutes, total_live_seconds,
+        is_live, current_room_id, current_streak, longest_streak,
+        bio, role, college, course, year_of_study, location,
+        academic_interests, subjects, learning_goals, skills, languages,
+        show_college, show_stats, show_goals, show_location,
+        is_suspended, created_at
+      FROM users WHERE id = ?
+    `).get(req.user.id);
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -1058,6 +1246,332 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
   }
 });
 
+// Comprehensive Student Profile Endpoints
+app.get('/api/users/profile/:identifier', optionalAuthenticateToken, (req, res) => {
+  try {
+    const { identifier } = req.params;
+    if (!identifier) {
+      return res.status(400).json({ error: 'User identifier is required' });
+    }
+
+    let targetUser = db.prepare(`
+      SELECT 
+        id, username, email, display_name, avatar_seed, avatar_url,
+        daily_goal_minutes, total_focus_minutes, total_live_seconds,
+        is_live, current_room_id, current_streak, longest_streak,
+        bio, role, college, course, year_of_study, location,
+        academic_interests, subjects, learning_goals, skills, languages,
+        show_college, show_stats, show_goals, show_location,
+        is_suspended, created_at
+      FROM users 
+      WHERE id = ? OR username = ?
+    `).get(identifier, identifier);
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Student profile not found' });
+    }
+
+    const isOwnProfile = Boolean(req.user && req.user.id === targetUser.id);
+    const isSuperAdmin = Boolean(req.user && req.user.isSuperAdmin);
+
+    // Calculate verified study statistics from authoritative database records
+    const liveSessionsCount = db.prepare('SELECT COUNT(*) as count FROM live_sessions WHERE user_id = ? AND duration_seconds >= 60').get(targetUser.id).count;
+    const studySessionsCount = db.prepare('SELECT COUNT(*) as count FROM study_sessions WHERE user_id = ?').get(targetUser.id).count;
+    const totalSessions = liveSessionsCount + studySessionsCount;
+
+    const blogsCount = db.prepare("SELECT COUNT(*) as count FROM blogs WHERE author_id = ? AND status = 'published'").get(targetUser.id).count;
+    const roomsCreatedCount = db.prepare('SELECT COUNT(*) as count FROM rooms WHERE created_by = ?').get(targetUser.id).count;
+
+    const higherRankCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE total_live_seconds > ?').get(targetUser.total_live_seconds || 0).count;
+    const leaderboardRank = higherRankCount + 1;
+    const totalStudents = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+
+    const badges = calculateAchievements({
+      totalLiveSeconds: targetUser.total_live_seconds,
+      currentStreak: targetUser.current_streak,
+      longestStreak: targetUser.longest_streak,
+      sessionsCount: totalSessions,
+      blogsCount,
+      roomsCreatedCount
+    });
+
+    // Recent published blogs
+    const blogs = db.prepare(`
+      SELECT id, title, category, image_url, likes_count, comments_count, created_at,
+             SUBSTR(content, 1, 200) as excerpt
+      FROM blogs
+      WHERE author_id = ? AND status = 'published'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all(targetUser.id);
+
+    // Recent study activity
+    const recentActivity = db.prepare(`
+      SELECT s.id, s.room_id, r.name as room_name, s.started_at, s.ended_at, s.duration_seconds
+      FROM live_sessions s
+      LEFT JOIN rooms r ON s.room_id = r.id
+      WHERE s.user_id = ? AND s.duration_seconds >= 60
+      ORDER BY s.started_at DESC
+      LIMIT 10
+    `).all(targetUser.id);
+
+    const fullStats = {
+      totalLiveSeconds: targetUser.total_live_seconds || 0,
+      totalFocusMinutes: targetUser.total_focus_minutes || 0,
+      totalHours: Number(((targetUser.total_live_seconds || 0) / 3600).toFixed(1)),
+      sessionsCompleted: totalSessions,
+      currentStreak: targetUser.current_streak || 0,
+      longestStreak: targetUser.longest_streak || 0,
+      leaderboardRank,
+      totalStudents,
+      blogsPublished: blogsCount,
+      roomsCreated: roomsCreatedCount
+    };
+
+    // Construct profile object with privacy safeguards
+    const profile = {
+      id: targetUser.id,
+      username: targetUser.username,
+      displayName: targetUser.display_name,
+      avatarSeed: targetUser.avatar_seed,
+      avatarUrl: targetUser.avatar_url || null,
+      bio: targetUser.bio || '',
+      role: targetUser.role || 'user',
+      isLive: Boolean(targetUser.is_live),
+      currentRoomId: targetUser.current_room_id,
+      memberSince: targetUser.created_at,
+      isOwnProfile,
+      privacy: {
+        showCollege: Boolean(targetUser.show_college),
+        showStats: Boolean(targetUser.show_stats),
+        showGoals: Boolean(targetUser.show_goals),
+        showLocation: Boolean(targetUser.show_location)
+      }
+    };
+
+    if (isOwnProfile) {
+      profile.email = targetUser.email;
+    }
+
+    // Apply privacy permissions for other viewers
+    if (isOwnProfile || isSuperAdmin || targetUser.show_college) {
+      profile.college = targetUser.college || '';
+      profile.course = targetUser.course || '';
+      profile.yearOfStudy = targetUser.year_of_study || '';
+      profile.academicInterests = targetUser.academic_interests || '';
+      profile.subjects = targetUser.subjects || '';
+      profile.skills = targetUser.skills || '';
+      profile.languages = targetUser.languages || '';
+    } else {
+      profile.college = '';
+      profile.course = '';
+      profile.yearOfStudy = '';
+      profile.academicInterests = '';
+      profile.subjects = '';
+      profile.skills = '';
+      profile.languages = '';
+    }
+
+    if (isOwnProfile || isSuperAdmin || targetUser.show_location) {
+      profile.location = targetUser.location || '';
+    } else {
+      profile.location = '';
+    }
+
+    if (isOwnProfile || isSuperAdmin || targetUser.show_goals) {
+      profile.learningGoals = targetUser.learning_goals || '';
+      profile.dailyGoalMinutes = targetUser.daily_goal_minutes || 120;
+    } else {
+      profile.learningGoals = '';
+      profile.dailyGoalMinutes = null;
+    }
+
+    if (isOwnProfile || isSuperAdmin || targetUser.show_stats) {
+      profile.stats = fullStats;
+      profile.badges = badges;
+      profile.recentActivity = recentActivity;
+    } else {
+      profile.stats = null;
+      profile.badges = [];
+      profile.recentActivity = [];
+    }
+
+    profile.blogs = blogs;
+
+    res.json({ profile });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({ error: 'Failed to load student profile' });
+  }
+});
+
+app.put('/api/users/profile', authenticateToken, (req, res) => {
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const {
+      displayName,
+      bio,
+      avatarSeed,
+      college,
+      course,
+      yearOfStudy,
+      location,
+      academicInterests,
+      subjects,
+      learningGoals,
+      skills,
+      languages,
+      dailyGoalMinutes,
+      showCollege,
+      showStats,
+      showGoals,
+      showLocation
+    } = req.body;
+
+    // Strict validation & sanitization
+    const newDisplayName = displayName !== undefined ? String(displayName).trim().slice(0, 50) : user.display_name;
+    const newBio = bio !== undefined ? String(bio).trim().slice(0, 300) : user.bio;
+    const newAvatarSeed = avatarSeed !== undefined ? String(avatarSeed).trim().slice(0, 50) : user.avatar_seed;
+
+    const newCollege = college !== undefined ? String(college).trim().slice(0, 100) : (user.college || '');
+    const newCourse = course !== undefined ? String(course).trim().slice(0, 100) : (user.course || '');
+    const newYearOfStudy = yearOfStudy !== undefined ? String(yearOfStudy).trim().slice(0, 50) : (user.year_of_study || '');
+    const newLocation = location !== undefined ? String(location).trim().slice(0, 100) : (user.location || '');
+    const newInterests = academicInterests !== undefined ? String(academicInterests).trim().slice(0, 300) : (user.academic_interests || '');
+    const newSubjects = subjects !== undefined ? String(subjects).trim().slice(0, 300) : (user.subjects || '');
+    const newGoals = learningGoals !== undefined ? String(learningGoals).trim().slice(0, 300) : (user.learning_goals || '');
+    const newSkills = skills !== undefined ? String(skills).trim().slice(0, 300) : (user.skills || '');
+    const newLanguages = languages !== undefined ? String(languages).trim().slice(0, 200) : (user.languages || '');
+
+    let newDailyGoal = user.daily_goal_minutes;
+    if (dailyGoalMinutes !== undefined) {
+      const parsed = parseInt(dailyGoalMinutes, 10);
+      if (!isNaN(parsed) && parsed >= 10 && parsed <= 1440) {
+        newDailyGoal = parsed;
+      }
+    }
+
+    const newShowCollege = showCollege !== undefined ? (showCollege ? 1 : 0) : (user.show_college !== undefined ? user.show_college : 1);
+    const newShowStats = showStats !== undefined ? (showStats ? 1 : 0) : (user.show_stats !== undefined ? user.show_stats : 1);
+    const newShowGoals = showGoals !== undefined ? (showGoals ? 1 : 0) : (user.show_goals !== undefined ? user.show_goals : 1);
+    const newShowLocation = showLocation !== undefined ? (showLocation ? 1 : 0) : (user.show_location !== undefined ? user.show_location : 1);
+
+    db.prepare(`
+      UPDATE users 
+      SET 
+        display_name = ?,
+        bio = ?,
+        avatar_seed = ?,
+        college = ?,
+        course = ?,
+        year_of_study = ?,
+        location = ?,
+        academic_interests = ?,
+        subjects = ?,
+        learning_goals = ?,
+        skills = ?,
+        languages = ?,
+        daily_goal_minutes = ?,
+        show_college = ?,
+        show_stats = ?,
+        show_goals = ?,
+        show_location = ?
+      WHERE id = ?
+    `).run(
+      newDisplayName,
+      newBio,
+      newAvatarSeed,
+      newCollege,
+      newCourse,
+      newYearOfStudy,
+      newLocation,
+      newInterests,
+      newSubjects,
+      newGoals,
+      newSkills,
+      newLanguages,
+      newDailyGoal,
+      newShowCollege,
+      newShowStats,
+      newShowGoals,
+      newShowLocation,
+      req.user.id
+    );
+
+    const updatedUser = db.prepare(`
+      SELECT 
+        id, username, email, display_name, avatar_seed, avatar_url,
+        daily_goal_minutes, total_focus_minutes, total_live_seconds,
+        is_live, current_room_id, current_streak, longest_streak,
+        bio, role, college, course, year_of_study, location,
+        academic_interests, subjects, learning_goals, skills, languages,
+        show_college, show_stats, show_goals, show_location,
+        is_suspended, created_at
+      FROM users WHERE id = ?
+    `).get(req.user.id);
+
+    const isSuperAdmin = isSuperAdminEmail(updatedUser.email);
+    updatedUser.role = isSuperAdmin ? 'superadmin' : 'user';
+    updatedUser.isSuperAdmin = isSuperAdmin;
+
+    syncUserToMongo(updatedUser);
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update student profile' });
+  }
+});
+
+// Profile Avatar Upload Endpoint
+app.post('/api/users/profile/avatar', authenticateToken, (req, res) => {
+  avatarUpload.single('avatar')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'Avatar upload failed' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+    db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, req.user.id);
+
+    const updatedUser = db.prepare(`
+      SELECT 
+        id, username, email, display_name, avatar_seed, avatar_url,
+        daily_goal_minutes, total_focus_minutes, total_live_seconds,
+        is_live, current_room_id, current_streak, longest_streak,
+        bio, role, college, course, year_of_study, location,
+        academic_interests, subjects, learning_goals, skills, languages,
+        show_college, show_stats, show_goals, show_location,
+        is_suspended, created_at
+      FROM users WHERE id = ?
+    `).get(req.user.id);
+
+    const isSuperAdmin = isSuperAdminEmail(updatedUser.email);
+    updatedUser.role = isSuperAdmin ? 'superadmin' : 'user';
+    updatedUser.isSuperAdmin = isSuperAdmin;
+
+    syncUserToMongo(updatedUser);
+
+    res.json({
+      success: true,
+      message: 'Profile photo uploaded successfully',
+      avatarUrl,
+      user: updatedUser
+    });
+  });
+});
+
 app.put('/api/auth/profile', authenticateToken, (req, res) => {
   try {
     const { displayName, dailyGoalMinutes, bio, avatarSeed } = req.body;
@@ -1066,10 +1580,10 @@ app.put('/api/auth/profile', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const newDisplayName = displayName !== undefined ? displayName.trim() : user.display_name;
+    const newDisplayName = displayName !== undefined ? displayName.trim().slice(0, 50) : user.display_name;
     const newGoal = dailyGoalMinutes !== undefined ? Number(dailyGoalMinutes) : user.daily_goal_minutes;
-    const newBio = bio !== undefined ? bio.trim() : user.bio;
-    const newAvatar = avatarSeed !== undefined ? avatarSeed.trim() : user.avatar_seed;
+    const newBio = bio !== undefined ? bio.trim().slice(0, 300) : user.bio;
+    const newAvatar = avatarSeed !== undefined ? avatarSeed.trim().slice(0, 50) : user.avatar_seed;
 
     db.prepare(`
       UPDATE users 
@@ -1077,7 +1591,22 @@ app.put('/api/auth/profile', authenticateToken, (req, res) => {
       WHERE id = ?
     `).run(newDisplayName, newGoal, newBio, newAvatar, req.user.id);
 
-    const updatedUser = db.prepare('SELECT id, username, email, display_name, avatar_seed, daily_goal_minutes, total_focus_minutes, total_live_seconds, is_live, current_room_id, current_streak, longest_streak, bio, role, created_at FROM users WHERE id = ?').get(req.user.id);
+    const updatedUser = db.prepare(`
+      SELECT 
+        id, username, email, display_name, avatar_seed, avatar_url,
+        daily_goal_minutes, total_focus_minutes, total_live_seconds,
+        is_live, current_room_id, current_streak, longest_streak,
+        bio, role, college, course, year_of_study, location,
+        academic_interests, subjects, learning_goals, skills, languages,
+        show_college, show_stats, show_goals, show_location,
+        is_suspended, created_at
+      FROM users WHERE id = ?
+    `).get(req.user.id);
+
+    const isSuperAdmin = isSuperAdminEmail(updatedUser.email);
+    updatedUser.role = isSuperAdmin ? 'superadmin' : 'user';
+    updatedUser.isSuperAdmin = isSuperAdmin;
+
     syncUserToMongo(updatedUser);
     res.json({ user: updatedUser });
   } catch (error) {

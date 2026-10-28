@@ -19,7 +19,7 @@ const CATEGORIES = [
   'Exam Prep'
 ];
 
-export default function BlogCommunityView({ onOpenAuth }) {
+export default function BlogCommunityView({ onOpenAuth, onOpenProfile }) {
   const { user, isAuthenticated } = useAuth();
   const { socket } = usePresence();
   
@@ -307,11 +307,18 @@ export default function BlogCommunityView({ onOpenAuth }) {
                     <div className="p-5">
                       {/* Meta: Author & Category */}
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <div className="flex items-center space-x-2">
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenProfile?.(blog.author_id);
+                          }}
+                          className="flex items-center space-x-2 cursor-pointer group/author hover:opacity-85 transition-opacity"
+                          title={`View ${blog.author_name}'s profile`}
+                        >
                           <div className="w-6 h-6 rounded-none bg-[#CCD5AE] dark:bg-[#454D37] text-[#40382F] dark:text-[#FEFAE0] font-bold flex items-center justify-center text-[10px] border border-[rgba(64,56,47,0.2)] dark:border-[#555C48]">
                             {blog.author_name ? blog.author_name.charAt(0) : 'U'}
                           </div>
-                          <span className="text-xs font-semibold text-[#40382F] dark:text-[#FEFAE0] truncate max-w-[120px]">
+                          <span className="text-xs font-semibold text-[#40382F] dark:text-[#FEFAE0] group-hover/author:text-[#D4A373] transition-colors truncate max-w-[120px]">
                             {blog.author_name}
                           </span>
                         </div>
@@ -410,6 +417,7 @@ export default function BlogCommunityView({ onOpenAuth }) {
         onEditBlog={(blog) => handleOpenEditor(blog)}
         onDeleteBlog={handleDeleteBlog}
         onOpenAuth={onOpenAuth}
+        onOpenProfile={onOpenProfile}
       />
     </div>
   );
