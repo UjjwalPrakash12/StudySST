@@ -1458,13 +1458,18 @@ app.get('/api/direct-messages/:recipientId', authenticateToken, (req, res) => {
       messages: messages.map(m => ({
         id: m.id,
         roomId: m.roomId,
+        room_id: m.roomId,
         senderId: m.senderId,
+        sender_id: m.senderId,
         recipientId: m.recipientId,
+        recipient_id: m.recipientId,
         senderName: m.senderName,
+        sender_name: m.senderName,
         senderAvatar: m.senderAvatar,
         message: m.message,
         timestamp: new Date(m.createdAt).getTime(),
-        createdAt: m.createdAt
+        createdAt: m.createdAt,
+        created_at: m.createdAt
       }))
     });
   } catch (err) {
@@ -2063,24 +2068,30 @@ io.on('connection', (socket) => {
   });
 
   // 1-to-1 Private Direct Messaging between Room Participants
-  socket.on('send-direct-message', ({ roomId, recipientId, recipientSocketId, text }) => {
+  socket.on('send-direct-message', ({ id, roomId, recipientId, recipientSocketId, text }) => {
     const rawText = (text || '').trim();
     if (!rawText || rawText.length > 2000) return;
     if (!currentUser || !currentUser.id) return;
 
-    const dmId = 'dm-' + crypto.randomUUID();
+    const dmId = id && typeof id === 'string' && id.startsWith('dm-') ? id : ('dm-' + crypto.randomUUID());
     const now = Date.now();
+    const isoDate = new Date(now).toISOString();
 
     const dmRecord = {
       id: dmId,
       roomId,
+      room_id: roomId,
       senderId: currentUser.id,
+      sender_id: currentUser.id,
       recipientId,
+      recipient_id: recipientId,
       senderName: currentUser.display_name || currentUser.username || 'Scholar',
+      sender_name: currentUser.display_name || currentUser.username || 'Scholar',
       senderAvatar: currentUser.avatar_seed || 'User',
       message: rawText,
       timestamp: now,
-      createdAt: new Date(now).toISOString()
+      createdAt: isoDate,
+      created_at: isoDate
     };
 
     // Save to database if sender is authenticated registered user
@@ -2096,17 +2107,23 @@ io.on('connection', (socket) => {
     }
 
     // Deliver strictly to the recipient's socket(s) in this room
+    const targetSockets = new Set();
     if (recipientSocketId) {
-      io.to(recipientSocketId).emit('direct-message-received', dmRecord);
-    } else if (roomId) {
+      targetSockets.add(recipientSocketId);
+    }
+    if (roomId && recipientId) {
       const roomState = activeRooms.get(roomId);
       if (roomState) {
         for (const [sId, p] of roomState.participants.entries()) {
-          if (p.user?.id === recipientId) {
-            io.to(sId).emit('direct-message-received', dmRecord);
+          if (p.user?.id === recipientId || sId === recipientId) {
+            targetSockets.add(sId);
           }
         }
       }
+    }
+
+    for (const sid of targetSockets) {
+      io.to(sid).emit('direct-message-received', dmRecord);
     }
 
     // Acknowledge back to sender socket

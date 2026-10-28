@@ -89,7 +89,10 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
   useEffect(() => {
     if (!livekitTrack && stream && videoRef.current) {
       if (peer.mediaState?.video) {
-        videoRef.current.srcObject = stream;
+        if (videoRef.current.srcObject !== stream) {
+          videoRef.current.srcObject = stream;
+        }
+        videoRef.current.play?.().catch(() => {});
       } else {
         videoRef.current.srcObject = null;
       }
@@ -100,15 +103,18 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
   useEffect(() => {
     if (!livekitTrack && stream && audioRef.current) {
       if (peer.mediaState?.mic) {
-        audioRef.current.srcObject = stream;
+        if (audioRef.current.srcObject !== stream) {
+          audioRef.current.srcObject = stream;
+        }
+        audioRef.current.play?.().catch(() => {});
       } else {
         audioRef.current.srcObject = null;
       }
     }
   }, [stream, livekitTrack, peer.mediaState?.mic]);
 
-  const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState === 'live' && t.enabled)) || Boolean(livekitTrack);
-  const hasVideo = Boolean(peer.mediaState?.video && isVideoTrackLive);
+  const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled)) || Boolean(livekitTrack);
+  const hasVideo = Boolean((peer.mediaState?.video !== false) && isVideoTrackLive);
   const isMicMuted = !peer.mediaState?.mic;
 
   return (
@@ -124,6 +130,7 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
             audioRef.current = el;
             if (el && stream && peer.mediaState?.mic && el.srcObject !== stream) {
               el.srcObject = stream;
+              el.play?.().catch(() => {});
             }
           }}
           autoPlay
@@ -138,10 +145,12 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
             videoRef.current = el;
             if (el && !livekitTrack && stream && peer.mediaState?.video && el.srcObject !== stream) {
               el.srcObject = stream;
+              el.play?.().catch(() => {});
             }
           }}
           autoPlay
           playsInline
+          muted
           className="w-full h-full object-cover"
         />
       ) : (
@@ -399,6 +408,27 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     }
   };
 
+  // WebRTC sender resolution helpers supporting both direct track senders and Unified Plan transceivers
+  const getVideoSender = (pc) => {
+    if (!pc) return null;
+    const senders = pc.getSenders();
+    const direct = senders.find(s => s.track && s.track.kind === 'video');
+    if (direct) return direct;
+    const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+    const tr = transceivers.find(t => (t.receiver?.track?.kind === 'video') || (t.sender?.track?.kind === 'video'));
+    return tr ? tr.sender : null;
+  };
+
+  const getAudioSender = (pc) => {
+    if (!pc) return null;
+    const senders = pc.getSenders();
+    const direct = senders.find(s => s.track && s.track.kind === 'audio');
+    if (direct) return direct;
+    const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+    const tr = transceivers.find(t => (t.receiver?.track?.kind === 'audio') || (t.sender?.track?.kind === 'audio'));
+    return tr ? tr.sender : null;
+  };
+
   // WebRTC Mesh Peer Connection Factory (used when SFU is not active or as mesh fallback)
   const createPeerConnection = (targetSocketId) => {
     if (peerConnectionsRef.current.has(targetSocketId)) {
@@ -418,6 +448,22 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
       });
     }
 
+    // Ensure audio & video transceivers exist so SDP offers & answers negotiate both sendrecv m-lines
+    const senders = pc.getSenders();
+    const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
+    const hasVideoSender = senders.some(s => s.track && s.track.kind === 'video');
+
+    if (!hasAudioSender && !pc.getTransceivers?.().some(t => t.receiver?.track?.kind === 'audio')) {
+      try {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      } catch (e) {}
+    }
+    if (!hasVideoSender && !pc.getTransceivers?.().some(t => t.receiver?.track?.kind === 'video')) {
+      try {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      } catch (e) {}
+    }
+
     pc.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
         socketRef.current.emit('webrtc-ice-candidate', {
@@ -429,6 +475,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     };
 
     pc.ontrack = (event) => {
+      if (event.track) {
+        event.track.onmute = () => {
+          setRemoteStreams(prev => new Map(prev));
+        };
+        event.track.onunmute = () => {
+          setRemoteStreams(prev => new Map(prev));
+        };
+      }
+
       setRemoteStreams(prev => {
         const next = new Map(prev);
         let stream = next.get(targetSocketId);
@@ -600,8 +655,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
           const newVideoTrack = stream.getVideoTracks()[0];
           if (newVideoTrack) {
             peerConnectionsRef.current.forEach(pc => {
-              const senders = pc.getSenders();
-              const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+              const videoSender = getVideoSender(pc);
               if (videoSender) {
                 videoSender.replaceTrack(newVideoTrack).catch(() => {});
               } else {
@@ -903,28 +957,42 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
     socket.on('direct-message-received', (dmRecord) => {
       const activeDm = activeDmRecipientRef.current;
+      const sId = dmRecord.senderId || dmRecord.sender_id;
       const isCurrentConversation = activeDm && (
-        activeDm.user?.id === dmRecord.sender_id || 
-        activeDm.socketId === dmRecord.sender_id
+        (activeDm.user?.id && activeDm.user.id === sId) ||
+        (activeDm.socketId && activeDm.socketId === sId) ||
+        (activeDm.socketId && dmRecord.senderSocketId && activeDm.socketId === dmRecord.senderSocketId)
       );
 
       if (isCurrentConversation) {
-        setDirectMessages(prev => [...prev, dmRecord]);
+        setDirectMessages(prev => {
+          if (prev.some(m => m.id === dmRecord.id)) return prev;
+          return [...prev, dmRecord];
+        });
         setTimeout(() => {
           if (dmScrollRef.current) {
             dmScrollRef.current.scrollTop = dmScrollRef.current.scrollHeight;
           }
         }, 50);
       } else {
-        setUnreadDms(prev => ({
-          ...prev,
-          [dmRecord.sender_id]: (prev[dmRecord.sender_id] || 0) + 1
-        }));
+        const unreadKey = sId || dmRecord.senderSocketId;
+        if (unreadKey) {
+          setUnreadDms(prev => ({
+            ...prev,
+            [unreadKey]: (prev[unreadKey] || 0) + 1
+          }));
+        }
       }
     });
 
     socket.on('direct-message-sent', (dmRecord) => {
       setDirectMessages(prev => {
+        const idx = prev.findIndex(m => m.id === dmRecord.id);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...dmRecord };
+          return next;
+        }
         if (prev.some(m => m.id === dmRecord.id)) return prev;
         return [...prev, dmRecord];
       });
@@ -1077,8 +1145,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
         // Update senders on WebRTC peer connections
         peerConnectionsRef.current.forEach(pc => {
-          const senders = pc.getSenders();
-          const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.kind === 'audio'));
+          const audioSender = getAudioSender(pc);
           if (audioSender) {
             audioSender.replaceTrack(newTrack).catch(() => {});
           } else {
@@ -1128,8 +1195,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
     // 2. Clear outgoing audio track on WebRTC peer connections (replaceTrack with null)
     peerConnectionsRef.current.forEach(pc => {
-      const senders = pc.getSenders();
-      const audioSender = senders.find(s => s.track?.kind === 'audio' || (s.track === null && s.kind === 'audio'));
+      const audioSender = getAudioSender(pc);
       if (audioSender) {
         try {
           audioSender.replaceTrack(null).catch(() => {});
@@ -1201,8 +1267,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
       // 3. Clear outgoing video track on WebRTC peer connections (replaceTrack with null)
       peerConnectionsRef.current.forEach(pc => {
-        const senders = pc.getSenders();
-        const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+        const videoSender = getVideoSender(pc);
         if (videoSender) {
           try {
             videoSender.replaceTrack(null).catch(() => {});
@@ -1262,8 +1327,7 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
 
           // Replace track on all WebRTC peer connections
           peerConnectionsRef.current.forEach(pc => {
-            const senders = pc.getSenders();
-            const videoSender = senders.find(s => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'));
+            const videoSender = getVideoSender(pc);
             if (videoSender) {
               videoSender.replaceTrack(newTrack).catch(err => console.warn('replaceTrack err:', err));
             } else {
@@ -1413,13 +1477,12 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
   const handleOpenDm = async (peer) => {
     setActiveDmRecipient(peer);
     setActiveDrawer('direct-message');
-    if (peer.user?.id) {
-      setUnreadDms(prev => {
-        const next = { ...prev };
-        delete next[peer.user.id];
-        return next;
-      });
-    }
+    setUnreadDms(prev => {
+      const next = { ...prev };
+      if (peer.user?.id) delete next[peer.user.id];
+      if (peer.socketId) delete next[peer.socketId];
+      return next;
+    });
     if (isAuthenticated && peer.user?.id) {
       try {
         const res = await api.getDirectMessages(peer.user.id);
@@ -1443,7 +1506,10 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     if (!dmInput.trim() || !activeDmRecipient) return;
 
     const text = dmInput.trim();
+    const clientMsgId = 'dm-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2, 8)));
+
     socketRef.current?.emit('send-direct-message', {
+      id: clientMsgId,
       roomId: room.id,
       recipientId: activeDmRecipient.user?.id,
       recipientSocketId: activeDmRecipient.socketId,
@@ -1451,16 +1517,26 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
     });
 
     const optimisticMsg = {
-      id: 'dm-local-' + Date.now(),
+      id: clientMsgId,
+      roomId: room.id,
       room_id: room.id,
-      sender_id: user?.id,
-      recipient_id: activeDmRecipient.user?.id,
+      senderId: user?.id || socketRef.current?.id,
+      sender_id: user?.id || socketRef.current?.id,
+      recipientId: activeDmRecipient.user?.id || activeDmRecipient.socketId,
+      recipient_id: activeDmRecipient.user?.id || activeDmRecipient.socketId,
       message: text,
+      timestamp: Date.now(),
+      createdAt: new Date().toISOString(),
       created_at: new Date().toISOString(),
+      senderName: user?.display_name || 'You',
       sender_name: user?.display_name || 'You',
+      recipientName: activeDmRecipient.user?.display_name || 'Scholar',
       recipient_name: activeDmRecipient.user?.display_name || 'Scholar',
     };
-    setDirectMessages(prev => [...prev, optimisticMsg]);
+    setDirectMessages(prev => {
+      if (prev.some(m => m.id === clientMsgId)) return prev;
+      return [...prev, optimisticMsg];
+    });
     setDmInput('');
     setTimeout(() => {
       if (dmScrollRef.current) {
@@ -2636,14 +2712,15 @@ export default function FocusRoomView({ room, onLeaveRoom }) {
                     </div>
                   ) : (
                     directMessages.map(msg => {
-                      const isMe = msg.sender_id === user?.id || msg.sender_id === socketRef.current?.id;
+                      const msgSenderId = msg.senderId || msg.sender_id;
+                      const isMe = (user?.id && msgSenderId === user.id) || (socketRef.current?.id && msgSenderId === socketRef.current.id);
                       return (
                         <div
                           key={msg.id}
                           className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                         >
                           <span className="text-[10px] text-[#75695A] mb-0.5 px-1 font-medium">
-                            {isMe ? 'You' : msg.sender_name || activeDmRecipient.user?.display_name || 'Peer'}
+                            {isMe ? 'You' : msg.senderName || msg.sender_name || activeDmRecipient.user?.display_name || 'Peer'}
                           </span>
                           <div
                             className={`px-3 py-2 rounded-none text-xs max-w-[85%] break-words font-medium ${
