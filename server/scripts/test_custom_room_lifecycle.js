@@ -10,9 +10,7 @@ process.env.PORT = String(PORT);
 process.env.NO_SERVER_LISTEN = 'true';
 process.env.IS_API_HANDLER = 'true';
 
-const { app, server } = require('../server');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'studystream_dev_secret_key_2026_super_secure';
+const { app, server, JWT_SECRET } = require('../server');
 const SUPER_ADMIN_EMAIL = 'ujjwalprakash1812@gmail.com';
 
 function createToken(user) {

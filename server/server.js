@@ -489,10 +489,8 @@ app.use((req, res, next) => {
   next();
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'studystream_dev_secret_key_2026_super_secure';
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.warn('⚠️ WARNING: Using fallback JWT_SECRET in production. Set JWT_SECRET in environment variables!');
-}
+const { getOrAssertJwtSecret } = require('./jwtConfig');
+const JWT_SECRET = getOrAssertJwtSecret();
 
 const allowedOrigin = process.env.CORS_ORIGIN || '*';
 app.use(cors({ origin: allowedOrigin }));
@@ -4359,4 +4357,5 @@ if (shouldListen) {
 module.exports = app;
 module.exports.app = app;
 module.exports.server = server;
+module.exports.JWT_SECRET = JWT_SECRET;
 
