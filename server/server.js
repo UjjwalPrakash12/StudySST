@@ -14,6 +14,7 @@ const multer = require('multer');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('./db');
 const { connectMongoDB, getIsConnected, models } = require('./mongodb');
+const { verifyFirebaseIdToken, initFirebaseAdmin } = require('./firebaseAdmin');
 
 // ==========================================
 // MongoDB Synchronization Helpers
@@ -1057,27 +1058,141 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const { email, displayName, photoUrl, uid, idToken } = req.body;
+    // 1. Require a valid Firebase ID token in the authentication request.
+    // Accept token from req.body.idToken, req.body.token, or Authorization header.
+    const rawToken = req.body?.idToken || req.body?.token || (
+      req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7).trim()
+        : null
+    );
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required for Google authentication' });
+    if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
+      return res.status(400).json({ error: 'Firebase ID token is required for Google authentication' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    // 2. Verify token using the Firebase Admin SDK's verifyIdToken() method.
+    // Validate against correct Firebase project and reject invalid, expired, or incorrectly signed tokens.
+    let decodedToken;
+    try {
+      decodedToken = await verifyFirebaseIdToken(rawToken);
+    } catch (authError) {
+      console.warn('[Google Auth] Token verification rejected:', authError.code || authError.message);
+      if (authError.code === 'auth/missing-id-token') {
+        return res.status(400).json({ error: 'Firebase ID token is required' });
+      }
+      if (authError.code === 'auth/id-token-expired') {
+        return res.status(401).json({ error: 'Firebase ID token has expired. Please sign in again.' });
+      }
+      if (
+        authError.code === 'auth/invalid-audience' ||
+        authError.code === 'auth/argument-error' ||
+        authError.code?.startsWith('auth/invalid') ||
+        authError.code === 'auth/user-token-revoked'
+      ) {
+        return res.status(401).json({ error: 'Invalid or forged Firebase ID token' });
+      }
+      if (authError.code === 'auth/service-unavailable') {
+        return res.status(503).json({ error: 'Authentication service temporarily unavailable' });
+      }
+      return res.status(401).json({ error: 'Firebase authentication failed: ' + (authError.message || 'Invalid token') });
+    }
 
-    // Check if user already exists with this email or google_id
-    let user = db.prepare('SELECT * FROM users WHERE email = ? OR google_id = ?').get(cleanEmail, uid || '');
+    // 3. Obtain authenticated user's UID and email exclusively from verified token claims.
+    if (!decodedToken || !decodedToken.uid) {
+      return res.status(401).json({ error: 'Invalid token claims: Missing UID' });
+    }
 
+    const verifiedUid = decodedToken.uid;
+    const verifiedEmail = decodedToken.email ? decodedToken.email.trim().toLowerCase() : null;
+    const isEmailVerified = Boolean(decodedToken.email_verified);
+
+    // 4. Require a verified email before using that email for email-based account identification or super-admin authorization.
+    if (!verifiedEmail) {
+      return res.status(400).json({ error: 'A valid email address is required in the verified Google ID token' });
+    }
+    if (!isEmailVerified) {
+      return res.status(403).json({ error: 'Google email address is not verified. Please verify your email with Google before signing in.' });
+    }
+
+    // 5. Obtain display name and profile picture from trusted verified claims when available, with safe fallbacks.
+    // Completely ignore client-supplied email, UID, and profile fields!
+    const verifiedDisplayName = (decodedToken.name && typeof decodedToken.name === 'string' && decodedToken.name.trim())
+      ? decodedToken.name.trim()
+      : (verifiedEmail.split('@')[0] || 'scholar');
+    const verifiedPhotoUrl = (decodedToken.picture && typeof decodedToken.picture === 'string' && decodedToken.picture.trim())
+      ? decodedToken.picture.trim()
+      : null;
+
+    // 6. Look up existing user by verified UID, or by verified email
+    let user = db.prepare('SELECT * FROM users WHERE google_id = ?').get(verifiedUid);
+    if (!user) {
+      user = db.prepare('SELECT * FROM users WHERE email = ?').get(verifiedEmail);
+    }
+
+    // Fallback: If not found in SQLite, check MongoDB Atlas if connected
+    if (!user && models?.User) {
+      try {
+        const mongoUser = await models.User.findOne({
+          $or: [
+            { google_id: verifiedUid },
+            { email: verifiedEmail }
+          ]
+        }).lean();
+
+        if (mongoUser) {
+          db.prepare(`
+            INSERT INTO users (
+              id, username, email, password_hash, display_name, avatar_seed,
+              daily_goal_minutes, total_focus_minutes, total_live_seconds,
+              is_live, current_room_id, current_streak, longest_streak,
+              last_active_date, bio, role, is_suspended, google_id,
+              college, course, year_of_study, location, academic_interests,
+              subjects, learning_goals, skills, languages, avatar_url,
+              show_college, show_stats, show_goals, show_location
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              username = excluded.username,
+              email = excluded.email,
+              password_hash = excluded.password_hash,
+              display_name = excluded.display_name,
+              role = excluded.role,
+              is_suspended = excluded.is_suspended,
+              google_id = excluded.google_id;
+          `).run(
+            mongoUser.id, mongoUser.username, mongoUser.email, mongoUser.password_hash || '',
+            mongoUser.display_name, mongoUser.avatar_seed || 'Felix',
+            mongoUser.daily_goal_minutes || 120, mongoUser.total_focus_minutes || 0,
+            mongoUser.total_live_seconds || 0, mongoUser.is_live ? 1 : 0,
+            mongoUser.current_room_id || null, mongoUser.current_streak || 0,
+            mongoUser.longest_streak || 0, mongoUser.last_active_date || null,
+            mongoUser.bio || '', mongoUser.role || 'user', mongoUser.is_suspended ? 1 : 0,
+            mongoUser.google_id || null,
+            mongoUser.college || '', mongoUser.course || '', mongoUser.year_of_study || '',
+            mongoUser.location || '', mongoUser.academic_interests || '', mongoUser.subjects || '',
+            mongoUser.learning_goals || '', mongoUser.skills || '', mongoUser.languages || '',
+            mongoUser.avatar_url || null,
+            mongoUser.show_college !== undefined ? (mongoUser.show_college ? 1 : 0) : 1,
+            mongoUser.show_stats !== undefined ? (mongoUser.show_stats ? 1 : 0) : 1,
+            mongoUser.show_goals !== undefined ? (mongoUser.show_goals ? 1 : 0) : 1,
+            mongoUser.show_location !== undefined ? (mongoUser.show_location ? 1 : 0) : 1
+          );
+          user = db.prepare('SELECT * FROM users WHERE id = ?').get(mongoUser.id);
+        }
+      } catch (mongoErr) {
+        console.warn('[MongoDB] Google auth fallback lookup warning:', mongoErr.message);
+      }
+    }
+
+    // 7. Check if user account is suspended
     if (user && user.is_suspended) {
       return res.status(403).json({ error: 'Your account has been suspended by an administrator.' });
     }
 
+    // 8. If user does not exist, create new verified user
     if (!user) {
-      // Create new user for first-time Google signup
       const userId = 'user-' + crypto.randomUUID();
-      const baseUsername = (cleanEmail.split('@')[0] || 'scholar').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 15);
+      const baseUsername = (verifiedEmail.split('@')[0] || 'scholar').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().slice(0, 15);
       
-      // Ensure unique username
       let usernameCandidate = baseUsername || 'scholar';
       const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(usernameCandidate);
       if (existingUsername) {
@@ -1087,9 +1202,10 @@ app.post('/api/auth/google', async (req, res) => {
       const randomPassword = crypto.randomUUID();
       const salt = bcrypt.genSaltSync(10);
       const passwordHash = bcrypt.hashSync(randomPassword, salt);
-      const userDisplayName = displayName || usernameCandidate;
-      const avatarSeed = photoUrl || usernameCandidate;
-      const effectiveRole = isSuperAdminEmail(cleanEmail) ? 'superadmin' : 'user';
+      const userDisplayName = verifiedDisplayName || usernameCandidate;
+      const avatarSeed = verifiedPhotoUrl || usernameCandidate;
+      const isSuperAdmin = isSuperAdminEmail(verifiedEmail);
+      const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
 
       db.prepare(`
         INSERT INTO users (
@@ -1098,15 +1214,22 @@ app.post('/api/auth/google', async (req, res) => {
         )
         VALUES (?, ?, ?, ?, ?, ?, 120, 0, 0, 0, 0, 'Ready to focus and achieve big goals!', ?, ?)
       `).run(
-        userId, usernameCandidate, cleanEmail, passwordHash, userDisplayName, avatarSeed, effectiveRole, uid || null
+        userId, usernameCandidate, verifiedEmail, passwordHash, userDisplayName, avatarSeed, effectiveRole, verifiedUid
       );
 
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-    } else if (uid && !user.google_id) {
-      // Link google_id if not linked yet
-      db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(uid, user.id);
+    } else {
+      // 9. Legitimate account linking: link verified google_id if not yet set
+      if (!user.google_id) {
+        db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(verifiedUid, user.id);
+        user.google_id = verifiedUid;
+      } else if (user.google_id !== verifiedUid) {
+        // Prevent claiming an account linked to a different Google account
+        return res.status(409).json({ error: 'This email is already associated with a different Google account.' });
+      }
     }
 
+    // 10. Super Admin privileges determined strictly from server's trusted identity & existing authorization rules
     const isSuperAdmin = isSuperAdminEmail(user.email);
     const effectiveRole = isSuperAdmin ? 'superadmin' : 'user';
     if (user.role !== effectiveRole) {
@@ -1130,6 +1253,7 @@ app.post('/api/auth/google', async (req, res) => {
     res.status(500).json({ error: 'Internal server error during Google sign in' });
   }
 });
+
 
 function calculateAchievements({ totalLiveSeconds, currentStreak, longestStreak, sessionsCount, blogsCount, roomsCreatedCount }) {
   const maxStreak = Math.max(Number(currentStreak) || 0, Number(longestStreak) || 0);

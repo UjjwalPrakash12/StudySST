@@ -3,7 +3,8 @@ const { connectMongoDB, models } = require('../mongodb');
 
 const PRESERVED_EMAILS = [
   'ujjwalprakash1812@gmail.com',
-  'silent.sus01@gmail.com'
+  'silent.sus01@gmail.com',
+  'sattelite.xyz@gmail.com'
 ];
 
 async function cleanupTestArtifacts({ userIds = [], roomIds = [] } = {}) {

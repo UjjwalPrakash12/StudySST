@@ -48,10 +48,13 @@ export const api = {
   },
 
   async googleAuth(payload) {
+    const body = typeof payload === 'string'
+      ? { idToken: payload }
+      : { idToken: payload?.idToken, ...payload };
     const res = await fetch(`${BASE_URL}/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     return handleResponse(res);
   },
