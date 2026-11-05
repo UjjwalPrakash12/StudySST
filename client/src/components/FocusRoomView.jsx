@@ -87,9 +87,13 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
   }, [livekitTrack, peer.mediaState?.video]);
 
   // WebRTC Mesh Stream Attachment
+  const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled)) || Boolean(livekitTrack);
+  const hasVideo = Boolean((peer.mediaState?.video !== false) && isVideoTrackLive);
+  const isMicMuted = !peer.mediaState?.mic;
+
   useEffect(() => {
     if (!livekitTrack && stream && videoRef.current) {
-      if (peer.mediaState?.video) {
+      if (hasVideo) {
         if (videoRef.current.srcObject !== stream) {
           videoRef.current.srcObject = stream;
         }
@@ -98,21 +102,29 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         videoRef.current.srcObject = null;
       }
     }
-  }, [stream, livekitTrack, peer.mediaState?.video]);
+  }, [stream, livekitTrack, hasVideo]);
 
-  // Remote audio playback (Always attach stream so incoming audio is never muted)
+  // Remote audio playback (Always attach stream and unlock on user interaction)
   useEffect(() => {
     if (!livekitTrack && stream && audioRef.current) {
       if (audioRef.current.srcObject !== stream) {
         audioRef.current.srcObject = stream;
       }
-      audioRef.current.play?.().catch(() => {});
+      if (audioRef.current.paused) {
+        audioRef.current.play?.().catch(() => {
+          const unlockAudio = () => {
+            audioRef.current?.play?.().catch(() => {});
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+          };
+          window.addEventListener('click', unlockAudio, { once: true });
+          window.addEventListener('keydown', unlockAudio, { once: true });
+          window.addEventListener('touchstart', unlockAudio, { once: true });
+        });
+      }
     }
   }, [stream, livekitTrack]);
-
-  const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled)) || Boolean(livekitTrack);
-  const hasVideo = Boolean((peer.mediaState?.video !== false) && isVideoTrackLive);
-  const isMicMuted = !peer.mediaState?.mic;
 
   return (
     <div className={`relative bg-[#FAEDCD] rounded-none border overflow-hidden aspect-video flex items-center justify-center transition-all ${
@@ -127,7 +139,19 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
             audioRef.current = el;
             if (el && stream && el.srcObject !== stream) {
               el.srcObject = stream;
-              el.play?.().catch(() => {});
+            }
+            if (el && el.paused) {
+              el.play?.().catch(() => {
+                const unlockAudio = () => {
+                  el?.play?.().catch(() => {});
+                  window.removeEventListener('click', unlockAudio);
+                  window.removeEventListener('keydown', unlockAudio);
+                  window.removeEventListener('touchstart', unlockAudio);
+                };
+                window.addEventListener('click', unlockAudio, { once: true });
+                window.addEventListener('keydown', unlockAudio, { once: true });
+                window.addEventListener('touchstart', unlockAudio, { once: true });
+              });
             }
           }}
           autoPlay
@@ -140,8 +164,10 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         <video
           ref={(el) => {
             videoRef.current = el;
-            if (el && !livekitTrack && stream && peer.mediaState?.video && el.srcObject !== stream) {
+            if (el && !livekitTrack && stream && el.srcObject !== stream) {
               el.srcObject = stream;
+            }
+            if (el && el.paused) {
               el.play?.().catch(() => {});
             }
           }}
@@ -532,7 +558,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   };
 
   // WebRTC Mesh Peer Connection Factory (used when SFU is not active or as mesh fallback)
-  const createPeerConnection = (targetSocketId) => {
+  const createPeerConnection = (targetSocketId, isOfferInitiator = false) => {
     if (peerConnectionsRef.current.has(targetSocketId)) {
       return peerConnectionsRef.current.get(targetSocketId);
     }
@@ -540,30 +566,22 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
     const pc = new RTCPeerConnection(getIceServers());
     peerConnectionsRef.current.set(targetSocketId, pc);
 
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        try {
-          pc.addTrack(track, localStreamRef.current);
-        } catch (e) {
-          console.warn('Error adding track to peer connection:', e);
+    // If this peer is initiating the offer, deterministically add transceivers in fixed order:
+    // Transceiver 0 = audio ('sendrecv'), Transceiver 1 = video ('sendrecv')
+    if (isOfferInitiator) {
+      try {
+        const audioTr = pc.addTransceiver('audio', { direction: 'sendrecv' });
+        const videoTr = pc.addTransceiver('video', { direction: 'sendrecv' });
+
+        if (localStreamRef.current) {
+          const aTrack = localStreamRef.current.getAudioTracks()[0];
+          const vTrack = localStreamRef.current.getVideoTracks()[0];
+          if (aTrack && audioTr.sender) audioTr.sender.replaceTrack(aTrack).catch(() => {});
+          if (vTrack && videoTr.sender) videoTr.sender.replaceTrack(vTrack).catch(() => {});
         }
-      });
-    }
-
-    // Ensure audio & video transceivers exist so SDP offers & answers negotiate both sendrecv m-lines
-    const senders = pc.getSenders();
-    const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
-    const hasVideoSender = senders.some(s => s.track && s.track.kind === 'video');
-
-    if (!hasAudioSender && !pc.getTransceivers?.().some(t => t.receiver?.track?.kind === 'audio')) {
-      try {
-        pc.addTransceiver('audio', { direction: 'sendrecv' });
-      } catch (e) {}
-    }
-    if (!hasVideoSender && !pc.getTransceivers?.().some(t => t.receiver?.track?.kind === 'video')) {
-      try {
-        pc.addTransceiver('video', { direction: 'sendrecv' });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Error adding initial transceivers:', e);
+      }
     }
 
     pc.onicecandidate = (event) => {
@@ -751,6 +769,25 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [isAuthenticated, onOpenAuth]);
+
+  // Global user interaction listener to unlock HTML5 audio playback if blocked by browser autoplay policy
+  useEffect(() => {
+    const unlockAudioPlayback = () => {
+      document.querySelectorAll('audio').forEach(audioEl => {
+        if (audioEl.paused) {
+          audioEl.play().catch(() => {});
+        }
+      });
+    };
+    window.addEventListener('click', unlockAudioPlayback);
+    window.addEventListener('keydown', unlockAudioPlayback);
+    window.addEventListener('touchstart', unlockAudioPlayback);
+    return () => {
+      window.removeEventListener('click', unlockAudioPlayback);
+      window.removeEventListener('keydown', unlockAudioPlayback);
+      window.removeEventListener('touchstart', unlockAudioPlayback);
+    };
+  }, []);
 
   // Initialize media (360p 15fps camera on by default for authenticated users, microphone muted by default)
   useEffect(() => {
@@ -1074,7 +1111,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
         for (const peer of existingParticipants) {
           if (peer.socketId !== socket.id) {
             try {
-              const pc = createPeerConnection(peer.socketId);
+              const pc = createPeerConnection(peer.socketId, true);
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
               socket.emit('webrtc-offer', {
@@ -1094,9 +1131,26 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       const originSocketId = senderSocketId || from;
       if (!originSocketId) return;
       try {
-        const pc = createPeerConnection(originSocketId);
+        const pc = createPeerConnection(originSocketId, false);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         await flushQueuedIceCandidates(originSocketId, pc);
+
+        // Ensure transceivers are set to sendrecv and attach any existing local tracks
+        for (const tr of pc.getTransceivers()) {
+          tr.direction = 'sendrecv';
+          if (tr.receiver?.track?.kind === 'audio' && localStreamRef.current) {
+            const aTrack = localStreamRef.current.getAudioTracks()[0];
+            if (aTrack && tr.sender) {
+              tr.sender.replaceTrack(aTrack).catch(() => {});
+            }
+          } else if (tr.receiver?.track?.kind === 'video' && localStreamRef.current) {
+            const vTrack = localStreamRef.current.getVideoTracks()[0];
+            if (vTrack && tr.sender) {
+              tr.sender.replaceTrack(vTrack).catch(() => {});
+            }
+          }
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('webrtc-answer', {
@@ -1117,6 +1171,19 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
         if (pc) {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
           await flushQueuedIceCandidates(originSocketId, pc);
+
+          if (localStreamRef.current) {
+            const aTrack = localStreamRef.current.getAudioTracks()[0];
+            const vTrack = localStreamRef.current.getVideoTracks()[0];
+            const audioSender = getAudioSender(pc);
+            const videoSender = getVideoSender(pc);
+            if (aTrack && audioSender && !audioSender.track) {
+              audioSender.replaceTrack(aTrack).catch(() => {});
+            }
+            if (vTrack && videoSender && !videoSender.track) {
+              videoSender.replaceTrack(vTrack).catch(() => {});
+            }
+          }
         }
       } catch (err) {
         console.warn('Error setting remote description from answer:', err);
