@@ -38,8 +38,8 @@ const getIceServers = () => {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
   ];
 
   const turnUrl = import.meta.env.VITE_TURN_URL;
@@ -88,7 +88,8 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
 
   // WebRTC Mesh Stream Attachment
   const isVideoTrackLive = (stream && stream.getVideoTracks().some(t => t.readyState !== 'ended' && t.enabled)) || Boolean(livekitTrack);
-  const hasVideo = Boolean((peer.mediaState?.video !== false) && isVideoTrackLive);
+  const isPeerVideoEnabled = peer.mediaState?.video === true || Boolean(isVideoTrackLive && peer.mediaState?.video !== false);
+  const hasVideo = Boolean(isPeerVideoEnabled && ((stream && stream.getVideoTracks().length > 0) || livekitTrack));
   const isMicMuted = !peer.mediaState?.mic;
 
   useEffect(() => {
@@ -288,7 +289,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   const [mediaErrorMessage, setMediaErrorMessage] = useState(null);
   const guestPromptDismissedRef = useRef(false);
   const [micActive, setMicActive] = useState(false);
-  const [videoActive, setVideoActive] = useState(() => Boolean(isAuthenticated));
+  const [videoActive, setVideoActive] = useState(() => Boolean(isAuthenticated || localStorage.getItem('studystream_token')));
   const [participants, setParticipants] = useState([]);
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // socketId -> MediaStream (Mesh fallback)
   const [livekitRemoteTracks, setLivekitRemoteTracks] = useState(new Map()); // participantIdentity -> RemoteTrack
@@ -609,9 +610,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
         let stream = next.get(targetSocketId);
         if (!stream) {
           stream = new MediaStream();
-        } else {
-          // Clone tracks into fresh MediaStream reference so React state recognizes the update
-          stream = new MediaStream(stream.getTracks());
         }
 
         if (event.streams && event.streams[0]) {
@@ -838,6 +836,20 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
               livekitRoomRef.current.localParticipant.setCameraEnabled(true).catch(() => {});
             } catch (e) {}
           }
+
+          // Broadcast camera active state to room participants
+          setParticipants(prev => prev.map(p => {
+            if (p.socketId === socketRef.current?.id) {
+              return { ...p, mediaState: { ...p.mediaState, video: true } };
+            }
+            return p;
+          }));
+
+          socketRef.current?.emit('update-media-state', {
+            roomId: room.id,
+            mediaState: { video: true },
+            authToken: localStorage.getItem('studystream_token')
+          });
         } else {
           stream.getTracks().forEach(t => t.stop());
         }
@@ -1008,7 +1020,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       roomId: room.id,
       user: currentUserData,
       authToken: token,
-      mediaState: { mic: false, video: (isAuthenticated || Boolean(token)) ? videoActive : false },
+      mediaState: { mic: false, video: (isAuthenticated || Boolean(token)) ? Boolean(videoActive || isAuthenticated || token) : false },
       statusText,
       spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null,
       roomToken: room.roomToken || null
@@ -2564,6 +2576,29 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                   spotifyTrack={peerSpotify}
                   onOpenDm={handleOpenDm}
                   onOpenProfile={onOpenProfile}
+                />
+              );
+            })}
+          </div>
+
+          {/* Global Remote Audio Pool: Ensures audio from all connected peers is rendered regardless of current page */}
+          <div className="hidden" aria-hidden="true">
+            {remotePeers.map(peer => {
+              const peerStream = remoteStreams.get(peer.socketId);
+              if (!peerStream) return null;
+              return (
+                <audio
+                  key={`global-audio-${peer.socketId}`}
+                  ref={el => {
+                    if (el && el.srcObject !== peerStream) {
+                      el.srcObject = peerStream;
+                    }
+                    if (el && el.paused) {
+                      el.play?.().catch(() => {});
+                    }
+                  }}
+                  autoPlay
+                  playsInline
                 />
               );
             })}
