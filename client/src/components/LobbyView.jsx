@@ -411,7 +411,7 @@ export default function LobbyView({ onJoinRoom, onOpenAuth, isAuthenticated }) {
       {loading ? (
         <div className="py-20 text-center">
           <div className="inline-block animate-spin rounded-none h-8 w-8 border-4 border-[#D4A373] border-t-transparent"></div>
-          <p className="mt-3 text-xs text-[#75695A] font-medium">Connecting to StudyStream rooms...</p>
+          <p className="mt-3 text-xs text-[#75695A] font-medium">Connecting to StudySST rooms...</p>
         </div>
       ) : filteredRooms.length === 0 ? (
         <div className="p-12 text-center rounded-none bg-[#FAEDCD] border border-[rgba(64,56,47,0.2)]">

@@ -174,7 +174,7 @@ function AppContent() {
         <footer className="border-t border-[rgba(64,56,47,0.14)] bg-[#FAEDCD] py-8 text-center text-xs text-[#75695A]">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-[#40382F]">StudyStream Live</span>
+              <span className="font-bold text-[#40382F]">StudySST Live</span>
               <span>— End-Term Software Engineering Project</span>
             </div>
             

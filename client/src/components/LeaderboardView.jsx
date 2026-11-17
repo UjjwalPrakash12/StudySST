@@ -64,7 +64,7 @@ export default function LeaderboardView({ onOpenProfile }) {
           <Trophy className="w-3.5 h-3.5 text-[#D4A373]" />
           <span>Global Live Hours Hall of Fame</span>
         </div>
-        <h1 className="text-3xl font-black text-[#40382F] dark:text-[#FEFAE0] tracking-tight">StudyStream Leaderboard</h1>
+        <h1 className="text-3xl font-black text-[#40382F] dark:text-[#FEFAE0] tracking-tight">StudySST Leaderboard</h1>
         <p className="text-xs sm:text-sm text-[#75695A] dark:text-[#CCD5AE] mt-2 font-normal">
           Rankings calculated automatically from verified live stream study hours. Unlimited sessions, anti-cheat protected.
         </p>
@@ -270,7 +270,7 @@ export default function LeaderboardView({ onOpenProfile }) {
               <h3 className="text-sm font-bold uppercase tracking-wider text-[#40382F] dark:text-[#FEFAE0]">Full Live Hours Standing</h3>
               <span className="text-[11px] text-[#75695A] dark:text-[#CCD5AE] flex items-center space-x-1 uppercase tracking-wider font-mono">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#D4A373]" />
-                <span>Verified by StudyStream Engine</span>
+                <span>Verified by StudySST Engine</span>
               </span>
             </div>
             

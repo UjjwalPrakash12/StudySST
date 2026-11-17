@@ -4319,7 +4319,7 @@ const shouldListen = !process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAM
 if (shouldListen) {
   server.listen(PORT, async () => {
     console.log(`=================================================`);
-    console.log(`  StudyStream Live Server Running on port ${PORT}`);
+    console.log(`  StudySST Live Server Running on port ${PORT}`);
     console.log(`  Community Blogs & Unlimited Live Hours: ACTIVE `);
     console.log(`=================================================`);
     

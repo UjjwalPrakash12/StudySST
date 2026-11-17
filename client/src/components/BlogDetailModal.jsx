@@ -334,7 +334,7 @@ export default function BlogDetailModal({
                 </div>
 
                 <span className="text-[11px] text-[#75695A] dark:text-[#CCD5AE] font-mono uppercase tracking-wider">
-                  StudyStream Verified Post
+                  StudySST Verified Post
                 </span>
               </div>
 

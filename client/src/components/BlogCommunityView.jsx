@@ -183,7 +183,7 @@ export default function BlogCommunityView({ onOpenAuth, onOpenProfile }) {
           </div>
           <h1 className="text-3xl font-black text-[#40382F] dark:text-[#FEFAE0] tracking-tight">Study & Engineering Blogs</h1>
           <p className="text-xs sm:text-sm text-[#75695A] dark:text-[#CCD5AE] mt-1 max-w-xl font-normal">
-            Read techniques, deep-work habits, exam roadmaps, and reflections shared by members of the StudyStream live community.
+            Read techniques, deep-work habits, exam roadmaps, and reflections shared by members of the StudySST live community.
           </p>
         </div>
 

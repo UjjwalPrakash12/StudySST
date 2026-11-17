@@ -31,7 +31,7 @@ export default function Navbar({ currentView, setCurrentView, onOpenAuth, onOpen
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <span className="font-bold text-lg text-[#40382F] tracking-tight">StudyStream</span>
+              <span className="font-bold text-lg text-[#40382F] tracking-tight">StudySST</span>
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-none bg-[#CCD5AE] text-[#40382F] border border-[rgba(64,56,47,0.2)] uppercase tracking-wider">
                 Live
               </span>

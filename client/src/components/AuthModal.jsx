@@ -116,7 +116,7 @@ export default function AuthModal({ isOpen, onClose }) {
             <Sparkles className="w-6 h-6" />
           </div>
           <h2 className="text-2xl font-black text-[#40382F] dark:text-[#FEFAE0] tracking-tight uppercase">
-            {isRegisterMode ? 'Join StudyStream' : 'Welcome Back'}
+            {isRegisterMode ? 'Join StudySST' : 'Welcome Back'}
           </h2>
           <p className="text-xs sm:text-sm text-[#75695A] dark:text-[#CCD5AE] mt-1 font-normal">
             {isRegisterMode
