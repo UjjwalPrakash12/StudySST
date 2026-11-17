@@ -14,7 +14,7 @@ import {
   MessageSquare, MessageCircle, CheckSquare, Volume2, VolumeX, LogOut, Send, 
   Sparkles, Coffee, Flame, ThumbsUp, Zap, HelpCircle, Edit3, X, Sliders,
   Radio, Clock, ShieldCheck, Award, Users, ChevronLeft, ChevronRight, Wifi, WifiOff,
-  Music, Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen, UserX, Trash2, User
+  Smile, ExternalLink, Play, Pause, Disc, Lock, Minimize2, Maximize2, ArrowLeft, BookOpen, UserX, Trash2, User
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -70,7 +70,7 @@ const VIDEO_CONSTRAINTS = {
 /**
  * Dedicated Remote Video Tile with support for both LiveKit SFU tracks and WebRTC Mesh streams.
  */
-function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality, spotifyTrack, onOpenDm, onOpenProfile }) {
+function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connectionQuality, onOpenDm, onOpenProfile }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
 
@@ -250,25 +250,6 @@ function RemoteParticipantTile({ peer, stream, livekitTrack, isSpeaking, connect
         </div>
       </div>
 
-      {/* Spotify Playing Pill */}
-      {spotifyTrack?.isPlaying && spotifyTrack?.trackTitle && (
-        <div className="absolute bottom-8 left-2.5 right-2.5 pointer-events-none">
-          <a
-            href={spotifyTrack.spotifyUrl || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="pointer-events-auto inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-none bg-[#1DB954]/15 backdrop-blur-sm border border-[#1DB954]/40 text-[10px] text-[#191414] hover:bg-[#1DB954]/25 transition-all max-w-full truncate"
-            title={`Listening to ${spotifyTrack.trackTitle} by ${spotifyTrack.artist || 'Unknown'} on Spotify`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1DB954] animate-pulse flex-shrink-0"></span>
-            <span className="truncate font-semibold">🎵 {spotifyTrack.trackTitle}</span>
-            {spotifyTrack.artist && (
-              <span className="truncate text-[#75695A] hidden sm:inline">• {spotifyTrack.artist}</span>
-            )}
-            <ExternalLink className="w-2.5 h-2.5 text-[#1DB954] flex-shrink-0 ml-0.5" />
-          </a>
-        </div>
-      )}
 
       {/* Bottom Subject Goal Pill */}
       <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
@@ -325,7 +306,7 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   const [selectedReactionCategory, setSelectedReactionCategory] = useState('Positive');
   const lastReactionTimeRef = useRef(0);
 
-  // UI Drawers: 'chat' | 'tasks' | 'audio' | 'scholars' | 'spotify' | 'direct-message' | null
+  // UI Drawers: 'chat' | 'tasks' | 'audio' | 'scholars' | 'direct-message' | null
   const [activeDrawer, setActiveDrawer] = useState(null);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [scholarsSearch, setScholarsSearch] = useState('');
@@ -421,15 +402,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
   const [isAudioPlaying, setIsAudioPlaying] = useState(() => (typeof soundSynthesizer.getIsPlaying === 'function' ? soundSynthesizer.getIsPlaying() : Boolean(soundSynthesizer.isPlaying)));
   const [soundCategoryFilter, setSoundCategoryFilter] = useState('All');
 
-  // Spotify Opt-in Music Sharing
-  const [spotifyStatus, setSpotifyStatus] = useState({
-    connected: false,
-    isSharing: false,
-    track: null,
-    configured: true,
-  });
-  const [peerSpotifyMap, setPeerSpotifyMap] = useState({});
-  const [isSpotifyLoading, setIsSpotifyLoading] = useState(false);
 
   // Refs
   const socketRef = useRef(null);
@@ -1022,7 +994,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
       authToken: token,
       mediaState: { mic: false, video: (isAuthenticated || Boolean(token)) ? Boolean(videoActive || isAuthenticated || token) : false },
       statusText,
-      spotify: (spotifyStatus.connected && spotifyStatus.isSharing) ? spotifyStatus.track : null,
       roomToken: room.roomToken || null
     });
 
@@ -1099,16 +1070,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
 
     socket.on('room-joined', async ({ participants: existingParticipants, messages: initialMessages, sessionStartedAt, elapsedSeconds }) => {
       setParticipants(existingParticipants || []);
-      if (existingParticipants) {
-        const initialSpotify = {};
-        for (const p of existingParticipants) {
-          if (p.spotify) {
-            initialSpotify[p.socketId] = p.spotify;
-            if (p.user?.id) initialSpotify[p.user.id] = p.spotify;
-          }
-        }
-        setPeerSpotifyMap(prev => ({ ...prev, ...initialSpotify }));
-      }
       if (initialMessages) {
         setMessages(initialMessages);
       }
@@ -1225,21 +1186,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
         const filtered = prev.filter(p => p.socketId !== participant.socketId);
         return [...filtered, participant];
       });
-      if (participant.spotify) {
-        setPeerSpotifyMap(prev => ({
-          ...prev,
-          [participant.socketId]: participant.spotify,
-          ...(participant.user?.id ? { [participant.user.id]: participant.spotify } : {})
-        }));
-      }
-    });
-
-    socket.on('peer-spotify-updated', ({ socketId, userId, spotify }) => {
-      setPeerSpotifyMap(prev => ({
-        ...prev,
-        [socketId]: spotify,
-        ...(userId ? { [userId]: spotify } : {})
-      }));
     });
 
     socket.on('direct-message-received', (dmRecord) => {
@@ -1756,119 +1702,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
     }
   };
 
-  // Load Spotify status on mount & handle redirect callback
-  useEffect(() => {
-    const checkSpotify = async () => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('spotify')) {
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, '', newUrl);
-        }
-        if (isAuthenticated) {
-          const res = await api.getSpotifyStatus();
-          setSpotifyStatus(res);
-          if (res.connected && res.isSharing && res.track) {
-            socketRef.current?.emit('spotify-status-updated', {
-              roomId: room.id,
-              spotify: res.track,
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('Spotify status fetch error:', err);
-      }
-    };
-    checkSpotify();
-  }, [isAuthenticated, room.id]);
-
-  // Periodic Spotify polling to update currently playing track for room peers
-  useEffect(() => {
-    if (!isAuthenticated || !spotifyStatus.connected || !spotifyStatus.isSharing) return;
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const res = await api.getSpotifyCurrentTrack();
-        if (res && res.track) {
-          setSpotifyStatus(prev => ({
-            ...prev,
-            track: res.track,
-          }));
-          socketRef.current?.emit('spotify-status-updated', {
-            roomId: room.id,
-            spotify: res.track,
-          });
-        }
-      } catch (e) {
-        console.warn('Spotify polling error:', e);
-      }
-    }, 15000);
-
-    return () => clearInterval(pollInterval);
-  }, [isAuthenticated, spotifyStatus.connected, spotifyStatus.isSharing, room.id]);
-
-  const handleConnectSpotify = async () => {
-    if (!isAuthenticated) {
-      alert('Authentication Required:\nPlease sign in or register an account to connect your Spotify account.');
-      return;
-    }
-    setIsSpotifyLoading(true);
-    try {
-      const res = await api.getSpotifyAuthUrl();
-      if (res.configured === false) {
-        alert('Spotify Integration Setup Required:\nSpotify API credentials are not configured yet on the server.\n\nTo enable Spotify music sharing:\n1. Create a free Spotify App on https://developer.spotify.com/dashboard\n2. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to your environment (.env or Render dashboard)\n3. Set Redirect URI in Spotify Dashboard to:\n' + window.location.origin + '/api/spotify/callback');
-        setIsSpotifyLoading(false);
-        return;
-      }
-      const targetUrl = res.authUrl || res.url;
-      if (targetUrl) {
-        window.location.href = targetUrl;
-      }
-    } catch (err) {
-      alert('Failed to connect Spotify: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsSpotifyLoading(false);
-    }
-  };
-
-  const handleToggleSpotifySharing = async () => {
-    try {
-      const nextVal = !spotifyStatus.isSharing;
-      const res = await api.toggleSpotifySharing(nextVal);
-      setSpotifyStatus(prev => ({ ...prev, isSharing: res.isSharing }));
-      if (!res.isSharing) {
-        socketRef.current?.emit('spotify-status-updated', {
-          roomId: room.id,
-          spotify: null,
-        });
-      } else {
-        const trackRes = await api.getSpotifyCurrentTrack();
-        if (trackRes?.track) {
-          setSpotifyStatus(prev => ({ ...prev, track: trackRes.track }));
-          socketRef.current?.emit('spotify-status-updated', {
-            roomId: room.id,
-            spotify: trackRes.track,
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Error toggling spotify sharing:', err);
-    }
-  };
-
-  const handleDisconnectSpotify = async () => {
-    if (!confirm('Are you sure you want to disconnect Spotify?')) return;
-    try {
-      await api.disconnectSpotify();
-      setSpotifyStatus({ connected: false, isSharing: false, track: null, configured: true });
-      socketRef.current?.emit('spotify-status-updated', {
-        roomId: room.id,
-        spotify: null,
-      });
-    } catch (err) {
-      console.error('Error disconnecting Spotify:', err);
-    }
-  };
 
   // Direct Messaging Handlers
   const handleOpenDm = async (peer) => {
@@ -2328,22 +2161,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
             )}
           </button>
 
-          {/* Spotify Music Toggle */}
-          <button
-            onClick={() => setActiveDrawer(activeDrawer === 'spotify' ? null : 'spotify')}
-            className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-none text-xs font-semibold border transition-all ${
-              activeDrawer === 'spotify' || (spotifyStatus.isSharing && spotifyStatus.track?.isPlaying)
-                ? 'bg-[#1DB954]/20 border-[#1DB954]/50 text-[#191414] font-bold'
-                : 'bg-[#FEFAE0] border-[rgba(64,56,47,0.2)] text-[#75695A] hover:bg-[#E9EDC9]'
-            }`}
-            title="Spotify Music Sharing"
-          >
-            <Music className="w-3.5 h-3.5 text-[#1DB954]" />
-            <span className="hidden md:inline">Spotify</span>
-            {spotifyStatus.isSharing && spotifyStatus.track?.isPlaying && (
-              <span className="w-1.5 h-1.5 bg-[#1DB954] rounded-full animate-pulse"></span>
-            )}
-          </button>
 
           {/* Tasks Button */}
           <button
@@ -2528,25 +2345,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                   </div>
                 </div>
 
-                {/* Spotify Playing Pill for Local User */}
-                {spotifyStatus.isSharing && spotifyStatus.track?.isPlaying && (
-                  <div className="absolute bottom-8 left-2.5 right-2.5 pointer-events-none">
-                    <a
-                      href={spotifyStatus.track.spotifyUrl || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="pointer-events-auto inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-none bg-[#1DB954]/15 backdrop-blur-sm border border-[#1DB954]/40 text-[10px] text-[#191414] hover:bg-[#1DB954]/25 transition-all max-w-full truncate"
-                      title={`Sharing: ${spotifyStatus.track.trackTitle} by ${spotifyStatus.track.artist || 'Unknown'}`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#1DB954] animate-pulse flex-shrink-0"></span>
-                      <span className="truncate font-semibold">🎵 {spotifyStatus.track.trackTitle}</span>
-                      {spotifyStatus.track.artist && (
-                        <span className="truncate text-[#75695A] hidden sm:inline">• {spotifyStatus.track.artist}</span>
-                      )}
-                      <ExternalLink className="w-2.5 h-2.5 text-[#1DB954] flex-shrink-0 ml-0.5" />
-                    </a>
-                  </div>
-                )}
 
                 {/* Bottom Subject Goal Pill */}
                 <div className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
@@ -2563,7 +2361,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
               const stream = remoteStreams.get(peer.socketId);
               const livekitTrack = livekitRemoteTracks.get(peer.user?.id || peer.socketId);
               const isSpeaking = Boolean(speakingPeers[peer.socketId] || speakingPeers[peer.user?.id]);
-              const peerSpotify = peerSpotifyMap[peer.socketId] || (peer.user?.id ? peerSpotifyMap[peer.user.id] : null) || peer.spotify;
 
               return (
                 <RemoteParticipantTile
@@ -2573,7 +2370,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
                   livekitTrack={livekitTrack}
                   isSpeaking={isSpeaking}
                   connectionQuality={networkQuality}
-                  spotifyTrack={peerSpotify}
                   onOpenDm={handleOpenDm}
                   onOpenProfile={onOpenProfile}
                 />
@@ -3130,148 +2926,6 @@ export default function FocusRoomView({ room, onLeaveRoom, onOpenAuth, onOpenPro
           </div>
         )}
 
-        {/* Drawer: Spotify Music Sharing */}
-        {activeDrawer === 'spotify' && (
-          <div className="w-80 border-l border-[rgba(64,56,47,0.2)] bg-[#FEFAE0] p-4 flex flex-col justify-between z-30 animate-fadeIn">
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between pb-3 border-b border-[rgba(64,56,47,0.2)]">
-                <div className="flex items-center space-x-2">
-                  <Music className="w-4 h-4 text-[#1DB954]" />
-                  <h3 className="text-sm font-bold text-[#40382F]">Spotify Music Sharing</h3>
-                </div>
-                <button
-                  onClick={() => setActiveDrawer(null)}
-                  className="p-1 rounded-none text-[#75695A] hover:text-[#40382F] hover:bg-[#FAEDCD]"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
-                <p className="text-[11px] text-[#75695A] leading-relaxed">
-                  Share what you're listening to while you study. Only your current track title and artist are shared—audio continues playing privately in your Spotify app.
-                </p>
-
-                {/* Spotify Account Card */}
-                <div className="p-3 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] space-y-3">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#40382F]">
-                    <div className="flex items-center space-x-1.5">
-                      <span className={`w-2 h-2 rounded-full ${spotifyStatus.connected ? 'bg-[#1DB954]' : 'bg-[#75695A]'}`}></span>
-                      <span>Spotify Connection</span>
-                    </div>
-                    <span className="text-[10px] text-[#75695A]">
-                      {spotifyStatus.connected ? 'Active' : 'Disconnected'}
-                    </span>
-                  </div>
-
-                  {!spotifyStatus.connected ? (
-                    <button
-                      onClick={handleConnectSpotify}
-                      disabled={isSpotifyLoading}
-                      className="w-full py-2 px-3 rounded-none bg-[#1DB954] hover:bg-[#1aa34a] text-white text-xs font-bold flex items-center justify-center space-x-2 transition-all shadow-none"
-                    >
-                      <Music className="w-3.5 h-3.5" />
-                      <span>{isSpotifyLoading ? 'Connecting...' : 'Connect Spotify Account'}</span>
-                    </button>
-                  ) : (
-                    <div className="space-y-3">
-                      <label className="flex items-center justify-between cursor-pointer pt-1 border-t border-[rgba(64,56,47,0.1)]">
-                        <span className="text-xs text-[#40382F] font-semibold">Share playback in study hall</span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(spotifyStatus.isSharing)}
-                          onChange={handleToggleSpotifySharing}
-                          className="accent-[#1DB954] cursor-pointer"
-                        />
-                      </label>
-
-                      {spotifyStatus.track?.isPlaying && (
-                        <div className="p-2.5 bg-[#FEFAE0] rounded-none border border-[#1DB954]/30 flex items-center space-x-2.5">
-                          {spotifyStatus.track.albumArt ? (
-                            <img
-                              src={spotifyStatus.track.albumArt}
-                              alt={spotifyStatus.track.trackTitle}
-                              className="w-10 h-10 object-cover rounded-none flex-shrink-0 border border-[#40382F]/10"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-[#1DB954]/20 flex items-center justify-center rounded-none flex-shrink-0">
-                              <Music className="w-5 h-5 text-[#1DB954]" />
-                            </div>
-                          )}
-                          <div className="truncate flex-1">
-                            <p className="text-xs font-bold text-[#40382F] truncate">
-                              {spotifyStatus.track.trackTitle}
-                            </p>
-                            <p className="text-[10px] text-[#75695A] truncate">
-                              {spotifyStatus.track.artist}
-                            </p>
-                            {spotifyStatus.track.spotifyUrl && (
-                              <a
-                                href={spotifyStatus.track.spotifyUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[9px] text-[#1DB954] font-semibold hover:underline flex items-center space-x-0.5 mt-0.5"
-                              >
-                                <span>Open in Spotify</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleDisconnectSpotify}
-                        className="text-[11px] text-rose-700 hover:text-rose-800 font-semibold"
-                      >
-                        Disconnect Spotify
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* What peers in this room are playing */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-[#40382F]">Scholars Playing Music</h4>
-                  {participants.filter(p => {
-                    const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
-                    return st && st.isPlaying;
-                  }).length === 0 ? (
-                    <div className="p-4 text-center text-xs text-[#75695A] bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)]">
-                      No other scholars are sharing music right now.
-                    </div>
-                  ) : (
-                    participants.filter(p => {
-                      const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
-                      return st && st.isPlaying;
-                    }).map(p => {
-                      const st = peerSpotifyMap[p.socketId] || (p.user?.id ? peerSpotifyMap[p.user.id] : null) || p.spotify;
-                      return (
-                        <div key={p.socketId || p.user?.id} className="p-2 bg-[#FAEDCD] rounded-none border border-[rgba(64,56,47,0.2)] flex items-center justify-between text-xs">
-                          <div className="truncate flex-1 mr-2">
-                            <span className="font-bold text-[#40382F] block truncate">{p.user?.display_name || 'Scholar'}</span>
-                            <span className="text-[11px] text-[#75695A] truncate block">🎵 {st.trackTitle} - {st.artist}</span>
-                          </div>
-                          {st.spotifyUrl && (
-                            <a
-                              href={st.spotifyUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1 rounded-none bg-[#FEFAE0] hover:bg-[#E9EDC9] border border-[rgba(64,56,47,0.2)] text-[#1DB954]"
-                              title="Listen on Spotify"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Drawer: 1-to-1 Private Direct Messaging */}
         {activeDrawer === 'direct-message' && (
